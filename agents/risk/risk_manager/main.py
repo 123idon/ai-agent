@@ -12,6 +12,7 @@ from datetime import datetime
 
 from agents.analysis.signal.indicators import KST, Direction, Signal
 from agents.analysis.signal.main import EntrySignal
+from agents.intel.market_watch.main import MarketGrade
 from agents.risk.risk_manager.hard_limits import (
     HardLimitGate,
     MarketContext,
@@ -77,12 +78,14 @@ class RiskAgent:
         *,
         sizing: SizingParams | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
+        market_state_provider: Callable[[], MarketGrade] = lambda: MarketGrade.GREEN,
     ) -> None:
         self._kis = kis
         self._gate = gate
         self._bus = bus
         self._sizing = sizing or SizingParams()
         self._clock = clock
+        self._market_state = market_state_provider
 
     async def review(self, signal: EntrySignal) -> ApprovedOrder | RejectedOrder:
         if signal.direction != Direction.LONG:
@@ -94,6 +97,23 @@ class RiskAgent:
                     reason="short direction not supported in v1",
                 ),
             )
+
+        grade = self._market_state()
+        if grade == MarketGrade.BLACK:
+            return await self._reject(signal, Violation(
+                rule_id="MARKET_BLACK", rule_name="market_state",
+                reason="market BLACK — 전 시스템 정지 권고",
+            ))
+        if grade == MarketGrade.RED:
+            return await self._reject(signal, Violation(
+                rule_id="MARKET_RED", rule_name="market_state",
+                reason="market RED — 신규 진입 전면 금지",
+            ))
+        if grade == MarketGrade.YELLOW and signal.signal == Signal.CONDITIONAL_ENTRY:
+            return await self._reject(signal, Violation(
+                rule_id="MARKET_YELLOW_CONDITIONAL", rule_name="market_state",
+                reason="market YELLOW — CONDITIONAL 진입 차단(§2.2.2)",
+            ))
 
         balance = await self._kis.get_balance()
         orderbook = await self._safe_orderbook(signal.symbol)
