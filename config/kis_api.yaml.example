@@ -2,6 +2,9 @@
 # KIS Open API 설정 예시
 # 실제 파일명: kis_api.yaml (gitignore 대상)
 # ============================================================
+# traidair 프록시 베이스 URL. KIS는 traidair를 통해서만 호출한다(CLAUDE.md §15).
+traidair_base_url: "http://localhost:3000"
+
 paper:
   base_url: "https://openapivts.koreainvestment.com:29443"
   app_key: "YOUR_PAPER_APP_KEY"
