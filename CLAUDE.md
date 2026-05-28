@@ -397,4 +397,61 @@ C:\ai-team\
 
 ---
 
+## 15. 외부 의존성: traidair 프록시
+
+ai-agent는 KIS Open API를 **직접 호출하지 않는다**. 모든 KIS·DART·매크로 호출은 별도 레포 `traidair`의 HTTP 프록시(`server.js`)를 거친다.
+
+### 15.1 위치 및 역할
+- 레포: <https://github.com/123idon/traidair>
+- 역할: KIS Open API / DART / Yahoo Finance(매크로) 단일 진입점. **KIS App Key/Secret은 traidair에서 보관**하며, ai-agent는 매 호출 시 keypair와 `mode`를 body로 동봉한다.
+- 기본 호스트: 운영자 환경에 따라 가변. `config/kis_api.yaml.traidair_base_url`로 주입.
+- 토큰 캐시: traidair가 29분 메모리 캐시 운영. ai-agent는 토큰을 알지 못한다.
+
+### 15.2 호출 규칙
+1. **`ok` 필드로 판정**: traidair는 실패도 HTTP 200으로 응답(`{ok:false, error}`)하므로 상태코드만 보지 말 것.
+2. **mode 일치**: 송신 메시지의 `mode`는 `config/mode.yaml.current_mode`와 항상 일치. 단 `/api/kis/chart`·`/api/kis/orderbook`은 traidair가 내부적으로 real 호스트로 강제 조회하므로 시세는 mode와 무관(설계 의도).
+3. **타임아웃·재시도**: traidair는 KIS 호출에 8초 데드라인. ai-agent는 6초 데드라인 + 지수 백오프 1회 재시도(200ms → 800ms) 후 실패 처리.
+4. **토큰 재발급**: `ok:false`로 인증 류 오류 감지 시 즉시 `/api/kis/token`을 한 번 호출해 재발급 트리거 후 원 요청 1회 재시도.
+
+### 15.3 현재 노출된 라우트 (사용 가능)
+
+| 라우트 | ai-agent 사용처 | 비고 |
+|---|---|---|
+| `POST /api/kis/token` | CEO 부팅 헬스체크 | 응답 토큰은 앞 10자만 노출 |
+| `POST /api/kis/chart` | 분석부 5지표 계산 | body: `{code, date:"YYYY-MM-DD", tf:"1\|3\|5\|15\|60"}` → `{candles:[{t,o,h,l,c,v}], prevCount, todayCount}` |
+| `POST /api/kis/orderbook` | 분석부 체결강도, 리스크부 슬리피지 5틱(HL-05) 검증 | 10단계 호가 + `strength`(체결강도) |
+| `POST /api/kis/price` | 분석부 현재가 보정, 학습부 스냅샷 | `{price, open, high, low, volume, change, changePct, name}` |
+| `POST /api/kis/order` | 실행부 **현금 주문만** | body: `{account, side:"buy\|sell", code, qty, price, orderType:"limit\|market"}` → `{ordNo, msg}` |
+| `POST /api/kis/balance` | CEO 시작자산, 리스크부 동시보유 검증(HL-01), 학습부 스냅샷 | `{cash, totalEval, totalPnl, positions[]}` |
+| `GET /api/market-data?mode=realtime` | 시장상황 매크로 등급 산출 | KOSPI / KOSDAQ / NASDAQ / S&P / DOW / VIX / USD-KRW / N225 / **KOSPI200** 9종. 캐시 3분 |
+| `GET /api/market-data?mode=sim&date=&time=&tf=` | 학습부 패턴분석(paper 전용) 과거 시뮬레이션 | traidair가 시뮬 시각 이후 데이터 cutoff 자동 적용 |
+| `GET /api/dart/list?days=1` | 스크리닝 페널티(악재 -20), 학습부 컨텍스트 | `corp_code` 옵션 |
+| `GET /api/dart/corpcode?nm=종목명` | DART 코드 매핑 | 현재 30종목 하드코딩 (확장 필요) |
+
+### 15.4 사용 금지 라우트 (의사결정 위임 금지)
+- `POST /api/claude` — **매매 결정을 LLM에 위임 금지**. 통계·요약 보조에만 사용 가능하며, 사용 시 학습부 journal에 호출 trace 필수 기록.
+- `GET /api/notion-features`, `/api/notion-lecture` — traidair UI용. ai-agent는 호출하지 않는다.
+- `GET/POST /api/user-data` — traidair `/tmp` 영속화에 의존 금지(휘발성). ai-agent state는 `state/`에 자체 보관.
+- `/api/save-config`, `/api/get-config`, `/api/set-claude-key` — traidair 운영 전용.
+
+### 15.5 보강 필요 라우트 (별도 PR로 traidair에 추가)
+
+CLAUDE.md §1.1·§2.5의 신용거래, §10의 미체결 모니터링, §2.2.1의 풀스캔 스크리닝 요구를 충족하려면 traidair에 다음 6개 라우트 추가가 필요하다.
+**해당 라우트가 모두 합치되기 전까지 실전 모드(live) 진입은 금지**한다 (§3.2 전환 조건에 자동 추가).
+
+| 신규 라우트 | KIS 원본 path | TR ID (실전/모의) | 사용 에이전트 | 목적 |
+|---|---|---|---|---|
+| `POST /api/kis/order-credit` | `/uapi/domestic-stock/v1/trading/order-cash` (신용 분기) | `TTTC0852U`/`TTTC0851U` (모의 미지원) | 실행부 | 신용 매수/매도 |
+| `POST /api/kis/order-cancel` | `/uapi/domestic-stock/v1/trading/order-rvsecncl` | `TTTC0803U`/`VTTC0803U` | 실행부 | 정정/취소 |
+| `GET /api/kis/unfilled` | `/uapi/.../inquire-psbl-rvsecncl` | `TTTC8036R`/`VTTC8036R` | 리스크부 | 체결-주문 불일치 감지 |
+| `GET /api/kis/inquire-psbl-order` | `/uapi/.../inquire-psbl-order` | `TTTC8908R`/`VTTC8908R` | 리스크부 | 매수가능액·신용 가용액 (HL-06 담보비율) |
+| `GET /api/kis/volume-rank` | `/uapi/.../volume-rank` | `FHPST01710000` | 스크리닝 | 거래대금 상위 풀스캔 |
+| `GET /api/kis/investor` | `/uapi/.../inquire-investor` | `FHKST01010900` | 시장상황 | 외인/기관 수급, 프로그램 매매 |
+
+### 15.6 보안 주의
+- traidair `server.js:55-56`에 KIS App Key/Secret 하드코딩 fallback이 존재. ai-agent는 환경변수 경로만 신뢰하며 traidair fallback에 의존하지 않는다. 운영 전 키 회전 권장.
+- HTTP 200 통일 응답은 미들박스가 오류를 캐시할 위험이 있다. ai-agent는 모든 `ok:false`를 5분 슬라이딩 윈도우로 카운트하여 임계치(분당 5회) 초과 시 CEO에 경보 + 신규 진입 동결.
+
+---
+
 _본 문서가 곧 시스템의 헌법이다. 코드와 문서가 충돌하면 문서 갱신 → 코드 동기화 순으로 처리한다._
