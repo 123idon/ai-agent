@@ -1,7 +1,8 @@
 # ============================================================
-# STRATEGY PARAMETERS
+# STRATEGY PARAMETERS — DAYTRADING ONLY
 # - paper 모드에서만 편집 가능
 # - live 모드 진입 시 파일 해시가 캡처되며 변조 시 Kill Switch
+# - 스캘핑 관련 파라미터는 일체 두지 않는다 (CLAUDE.md §5).
 # ============================================================
 
 # --- 스크리닝 점수 가중치 (합 100점) ---
@@ -36,35 +37,42 @@ signal:
     strong_min_indicators: 4
     conditional_min_indicators: 3
 
-# --- 진입/청산 룰 ---
+# --- 진입 (분할 매수) ---
 entry:
   split_ratios_strong: [0.5, 0.3, 0.2]
   conditional_cap_pct: 0.7
+  # 1종목 비중 상한 없음. 신용 포함 동적 사이징은 리스크부에서 결정.
+  use_margin_when_available: true
 
+# --- 익절 룰 (3단 구조, CLAUDE.md §5.3) ---
 take_profit:
-  step1_pct: 0.02
-  step1_close_ratio: 0.5
-  step2_pct: 0.04
-  step2_close_ratio: 0.3
-  trailing_stop_pct: 0.20
+  step1:
+    pct_range: [0.03, 0.05]      # +3 ~ +5% (ATR 기반 사전 지정)
+    close_ratio: 0.5
+  step2:
+    pct_range: [0.06, 0.08]      # +6 ~ +8% (ATR 기반 사전 지정)
+    close_ratio: 0.3
+  step3_trailing:
+    trail_from_high_pct: 0.015   # 고점 대비 -1.5% 이탈 시 전량
+    cutoff_time: "15:20:00"
+    force_close_time: "15:25:00"
 
+# --- 손절 룰 (CLAUDE.md §5.4) ---
 stop_loss:
-  scalping_hard_pct: -0.02
-  daytrading_hard_pct: -0.03
-  technical_priority: true
+  technical_priority: true       # 진입 캔들 저점 이탈 즉시 청산이 최우선
+  entry_candle_low_breach: true  # 1분봉 종가 < 진입 캔들 저점 → 시장가 청산
+  signal_breakdown_min_count: 2  # 거래량 소멸/MACD 데드/5MA 이탈 중 2개 이상
+  hard_max_pct: -0.03            # 안전 하한 (기술적 트리거가 늦을 때만)
 
+# --- 타임스톱 (CLAUDE.md §5.5) ---
 time_stop:
-  direction_check_minutes: 15
-  direction_box_pct: 0.003
-  underperform_minutes: 30
-  underperform_threshold_pct: 0.005
-  underperform_reduce_ratio: 0.5
+  evaluation_minutes: 30
+  flat_box_pct: 0.005            # ±0.5% 방향 미발생 시 50% 축소 또는 청산
+  count_as_stoploss: false       # 연속손절 카운터에 산입 X
 
-# --- 모드별 캡 ---
-modes:
-  scalping:
-    avg_holding_minutes: [5, 15]
+# --- 운영 모드 (단일) ---
+mode_profile:
   daytrading:
     avg_holding_minutes: [30, 180]
 
-version: "0.1.0"
+version: "0.2.0"
