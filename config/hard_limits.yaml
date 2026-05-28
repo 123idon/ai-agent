@@ -1,0 +1,30 @@
+# =========================================================
+# HARD LIMITS — DO NOT MODIFY WITHOUT CLAUDE.md §4 UPDATE
+# 이 파일은 시스템의 절대 규칙이다.
+# 변경 시 CLAUDE.md §4 동시 갱신 + 운영자 2인 승인 필수.
+# =========================================================
+
+# HL-01: 1종목 최대 투입 비중 (총자산 대비)
+max_position_pct_per_symbol: 0.15
+
+# HL-02: 동시 보유 가능 종목 수
+max_concurrent_positions: 3
+
+# HL-03: 일일 손실 한도 (도달 시 전면 중단)
+daily_loss_halt_pct: -0.02
+
+# HL-04: 연속 손절 쿨다운
+consecutive_stoploss_threshold: 3
+cooldown_after_stoploss_minutes: 60
+
+# HL-05/06: 진입 금지 시간대 (KST)
+entry_blackout_windows:
+  - { start: "09:00:00", end: "09:30:00", reason: "장초반 변동성 확인" }
+  - { start: "14:30:00", end: "15:30:00", reason: "장후반 신규 진입 금지" }
+
+# HL-07: 슬리피지 가드 (호가 틱 단위)
+max_slippage_ticks: 5
+
+# 하드리밋 버전 / 해시 (CI에서 검증)
+version: "1.0.0"
+last_reviewed_at: "2026-05-29"

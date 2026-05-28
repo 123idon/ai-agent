@@ -1,0 +1,70 @@
+# ============================================================
+# STRATEGY PARAMETERS
+# - paper 모드에서만 편집 가능
+# - live 모드 진입 시 파일 해시가 캡처되며 변조 시 Kill Switch
+# ============================================================
+
+# --- 스크리닝 점수 가중치 (합 100점) ---
+screening:
+  threshold: 70
+  weights:
+    turnover_rank: 25       # 전일 거래대금
+    opening_gap: 20         # 시가 갭
+    ma_alignment: 20        # 이동평균 정배열/위치
+    sector_theme: 15        # 업종/테마 모멘텀
+    volatility_atr: 20      # ATR 적정 변동성
+  penalty:
+    bad_news: -20
+    administrative_issue: -100   # 사실상 필터
+
+# --- 신호 지표 임계값 ---
+signal:
+  volume_surge_multiplier: 2.0    # 직전 20분 평균 대비
+  rsi:
+    period: 14
+    oversold: 30
+    overbought: 70
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  ma_periods: [5, 20, 60]
+  candle_patterns:
+    long: [hammer, bullish_engulfing, long_bullish]
+    short: [shooting_star, bearish_engulfing, long_bearish]
+  entry_rules:
+    strong_min_indicators: 4
+    conditional_min_indicators: 3
+
+# --- 진입/청산 룰 ---
+entry:
+  split_ratios_strong: [0.5, 0.3, 0.2]
+  conditional_cap_pct: 0.7
+
+take_profit:
+  step1_pct: 0.02
+  step1_close_ratio: 0.5
+  step2_pct: 0.04
+  step2_close_ratio: 0.3
+  trailing_stop_pct: 0.20
+
+stop_loss:
+  scalping_hard_pct: -0.02
+  daytrading_hard_pct: -0.03
+  technical_priority: true
+
+time_stop:
+  direction_check_minutes: 15
+  direction_box_pct: 0.003
+  underperform_minutes: 30
+  underperform_threshold_pct: 0.005
+  underperform_reduce_ratio: 0.5
+
+# --- 모드별 캡 ---
+modes:
+  scalping:
+    avg_holding_minutes: [5, 15]
+  daytrading:
+    avg_holding_minutes: [30, 180]
+
+version: "0.1.0"

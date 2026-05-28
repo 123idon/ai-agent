@@ -1,13 +1,37 @@
-node_modules/
-.env
-.env.local
-*.log
-.DS_Store
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .venv/
 venv/
+*.egg-info/
 dist/
 build/
+
+# Env / Secrets
+.env
+.env.local
+config/kis_api.yaml
+
+# State & Logs
+state/*
+!state/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Data (영구 보관은 별도 백업 전략)
+data/market/
+data/postmortem/
+
+# IDE / OS / Tooling
 .idea/
 .vscode/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Test / Coverage
+.pytest_cache/
+.coverage
+htmlcov/

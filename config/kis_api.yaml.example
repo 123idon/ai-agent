@@ -1,0 +1,17 @@
+# ============================================================
+# KIS Open API 설정 예시
+# 실제 파일명: kis_api.yaml (gitignore 대상)
+# ============================================================
+paper:
+  base_url: "https://openapivts.koreainvestment.com:29443"
+  app_key: "YOUR_PAPER_APP_KEY"
+  app_secret: "YOUR_PAPER_APP_SECRET"
+  account_no: "00000000-01"
+
+live:
+  base_url: "https://openapi.koreainvestment.com:9443"
+  app_key: "YOUR_LIVE_APP_KEY"
+  app_secret: "YOUR_LIVE_APP_SECRET"
+  account_no: "00000000-01"
+
+token_cache_path: "state/kis_token.json"

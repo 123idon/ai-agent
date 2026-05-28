@@ -1,0 +1,16 @@
+# ============================================================
+# MODE CONFIG
+# CEO 에이전트만 이 파일을 변경할 권한이 있다.
+# current_mode: paper | live
+# ============================================================
+current_mode: paper
+
+# 모드 잠금 (live 모드에서 사용)
+lock:
+  strategy_params_sha256: null    # CEO가 live 진입 시 자동 캡처
+  locked_at: null
+  locked_by: null
+
+# 직전 모드 전환 이력
+history:
+  - { from: null, to: paper, at: "2026-05-29T00:00:00+09:00", by: bootstrap }
