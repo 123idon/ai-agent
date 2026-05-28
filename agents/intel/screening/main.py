@@ -1,6 +1,6 @@
 """Screening agent (CLAUDE.md §2.2.1).
 
-거래대금 상위 → 차트로 점수 계산 → 70점 이상만 ``screening.candidates`` 발행.
+거래대금 상위 → 차트 점수 + 테마/공시 페널티 → 70점 이상만 ``screening.candidates`` 발행.
 """
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ from pathlib import Path
 import yaml
 
 from agents.analysis.signal.indicators import KST
-from agents.intel.screening.scorer import ScoringWeights, total_score
+from agents.intel.screening.scorer import ScoringWeights, dart_penalty, total_score
+from agents.intel.screening.theme import ThemeDetector
 from core.kis_client import KisBusinessError, KisClient, KisTransportError
 from core.messaging import Bus
 
@@ -28,6 +29,7 @@ class ScreeningCandidate:
     name: str
     score: float
     breakdown: dict[str, float]
+    themes: tuple[str, ...]
     timestamp: datetime
     reason: str
 
@@ -36,10 +38,11 @@ class ScreeningCandidate:
 class ScreeningParams:
     threshold: float = 70.0
     top_n: int = 30
-    market: str = "0000"            # 전체 (0001 KOSPI / 1001 KOSDAQ)
+    market: str = "0000"            # 전체 (0001=KOSPI, 1001=KOSDAQ)
     rank_by: int = 3                # 거래금액순
     weights: ScoringWeights = field(default_factory=ScoringWeights)
-    top_themes: tuple[str, ...] = ()
+    enable_dart: bool = True
+    dart_lookback_days: int = 2
 
     @classmethod
     def from_file(cls, path: Path) -> "ScreeningParams":
@@ -66,11 +69,14 @@ class ScreeningAgent:
         params: ScreeningParams | None = None,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
+        theme_detector: ThemeDetector | None = None,
     ) -> None:
         self._kis = kis
         self._bus = bus
         self._p = params or ScreeningParams()
         self._clock = clock
+        self._themes = theme_detector or ThemeDetector()
+        self._corp_code_cache: dict[str, str | None] = {}
 
     async def screen_once(self) -> list[ScreeningCandidate]:
         ranks = await self._kis.get_volume_rank(
@@ -105,6 +111,9 @@ class ScreeningAgent:
         lows = [float(c.l) for c in candles]
         first = candles[0]
         prev_close = self._infer_prev_close(candles)
+
+        themes = self._themes.detect_themes(code, name)
+        in_top = len(themes) > 0
         breakdown = total_score(
             rank=rank,
             open_price=int(first.o),
@@ -112,24 +121,65 @@ class ScreeningAgent:
             closes=closes,
             highs=highs,
             lows=lows,
-            in_top_themes=False,         # 테마 정보 별도 수집 시 통합 (v1 미연결)
+            in_top_themes=in_top,
             weights=self._p.weights,
             total_candidates=self._p.top_n,
         )
-        reason = ", ".join(f"{k}={v:.1f}" for k, v in breakdown.parts.items())
+
+        penalty = 0.0
+        penalty_reason = ""
+        if self._p.enable_dart:
+            penalty, penalty_reason = await self._dart_penalty(name)
+
+        final_score = breakdown.total + penalty
+        parts = dict(breakdown.parts)
+        if penalty < 0:
+            parts["dart_penalty"] = penalty
+
+        reason_parts = ", ".join(f"{k}={v:.1f}" for k, v in parts.items())
+        reason = f"{final_score:.1f}/100 ({reason_parts})"
+        if penalty_reason:
+            reason += f" | {penalty_reason}"
+        if themes:
+            reason += f" | themes={','.join(themes)}"
+
         return ScreeningCandidate(
             code=code,
             name=name,
-            score=breakdown.total,
-            breakdown=breakdown.parts,
+            score=final_score,
+            breakdown=parts,
+            themes=themes,
             timestamp=self._clock(),
-            reason=f"{breakdown.total:.1f}/100 ({reason})",
+            reason=reason,
         )
+
+    async def _dart_penalty(self, name: str) -> tuple[float, str]:
+        try:
+            corp_code = await self._resolve_corp_code(name)
+            if not corp_code:
+                return 0.0, ""
+            dart = await self._kis.get_dart_list(
+                days=self._p.dart_lookback_days, corp_code=corp_code,
+            )
+        except (KisBusinessError, KisTransportError, Exception) as e:  # noqa: BLE001
+            log.debug("DART fetch failed for %s: %s", name, e)
+            return 0.0, ""
+        reports = [item.report_nm for item in dart.list]
+        return dart_penalty(reports)
+
+    async def _resolve_corp_code(self, name: str) -> str | None:
+        if name in self._corp_code_cache:
+            return self._corp_code_cache[name]
+        try:
+            code = await self._kis.get_dart_corpcode(name)
+        except Exception:  # noqa: BLE001
+            code = None
+        self._corp_code_cache[name] = code
+        return code
 
     @staticmethod
     def _infer_prev_close(candles: Sequence) -> int:
         for c in candles:
             if getattr(c, "isPrev", False):
                 return int(c.c)
-        # prev가 없으면 첫 캔들의 종가를 prev로 간주 (gap 점수 0에 가깝게)
         return int(candles[0].c) if candles else 0

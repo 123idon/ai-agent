@@ -108,4 +108,10 @@ class OrderAgent:
         )
         log.info("ORDER_OK %s ord_no=%s", order.symbol, result.ordNo)
         await self._bus.publish(TOPIC_EVENT, event)
+        # 신용 매수 성공 시 ledger 동기화 시도 (실패는 비치명)
+        if order.use_credit and order.side == Side.BUY:
+            try:
+                await self._kis.sync_credit_ledger()
+            except Exception:
+                log.warning("credit ledger sync failed", exc_info=True)
         return event

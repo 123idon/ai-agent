@@ -499,9 +499,32 @@ MarketWatchAgent.poll_once()         [매 60초]
 JournalAgent                         [모든 토픽 구독 → data/journal/{YYYYMMDD}.jsonl append-only]
 ```
 
-### 16.2 테스트
-- `pytest tests/unit/` — 103개 단위 테스트 (httpx.MockTransport로 traidair 응답 모킹)
-- 검증 범위: KIS client / 하드리밋 6개 / 지표 5개 / 5지표 분류 / Bus / 3개 핵심 에이전트 / 시장상황 4단계 / 스크리닝 점수 / 학습부 journal·pattern·postmortem / CEO 부팅·Kill·잠금 해시 / market_state 통합 / `switch_mode` CLI
+### 16.2 메시지 envelope (`core/schemas/`)
+- 인-프로세스 Bus는 dataclass payload를 직접 전달하지만, 영속화/외부 출력 시점에 표준 envelope으로 wrap.
+- `core.schemas.wrap(topic, payload, sender, mode)` → `{msg_id, topic, ts, mode, sender, payload, trace_id}` dict.
+- `Topic` enum: 10개 표준 토픽 이름.
+- `JournalAgent`가 envelope 포맷으로 JSONL 저장 → redis-streams 이전 시 그대로 swap-in.
+
+### 16.3 신용 LOAN_DT 권위 동기화
+- traidair `/api/kis/balance` 응답에 `loanDt`, `crdtType` 필드 추가.
+- `Position.loanDt` 필드, `CreditLedger.sync_from_balance(positions)`로 KIS 값으로 권위적 덮어쓰기.
+- `KisClient.sync_credit_ledger()` 헬퍼.
+- `OrderAgent.execute`가 신용 매수 성공 직후 자동 호출 (실패는 비치명, 다음 회차에서 재시도).
+
+### 16.4 백테스트 엔진 (`agents/learning/pattern/backtest.py`)
+- `BacktestEngine(analyzer, params)` — walk-forward 분봉 시뮬레이션
+- `BacktestParams`: 워밍업 60, position 30%, TP1 +4%/50%, TP2 +7%/30%, 트레일링 -1.5%, 하드 -3%, 타임스톱 30봉, 진입 캔들 저점 기술 손절
+- `BacktestResult`: trades, 총 PnL, 승률, MDD, Sharpe
+- `PatternAnalysisAgent.backtest(candles)`로 외부 노출 (paper 전용).
+
+### 16.5 테마/공시 통합 (`agents/intel/screening/`)
+- `theme.py` — `ThemeDetector` (종목명 키워드 기반, 7개 디폴트 테마: 2차전지/AI/반도체/바이오/조선/원전/방산).
+- `scorer.dart_penalty(reports)` — 관리종목류 -100, 일반 악재 -20.
+- `ScreeningAgent`: traidair `/api/dart/corpcode`로 종목명→corp_code 캐시 조회 → `/api/dart/list` → 페널티 적용. DART 실패는 비치명.
+
+### 16.6 테스트
+- `pytest tests/unit/` — **126개 단위 테스트** (httpx.MockTransport로 traidair 응답 모킹, ~1.1초)
+- 검증 범위: KIS client / 하드리밋 6개 / 지표 5개 / 5지표 분류 / Bus / 3개 핵심 에이전트 / 시장상황 4단계 / 스크리닝 점수+테마+DART / 학습부 journal·pattern·postmortem·backtest / CEO 부팅·Kill·잠금 해시 / market_state 통합 / envelope / CreditLedger sync / `switch_mode` CLI
 
 ---
 

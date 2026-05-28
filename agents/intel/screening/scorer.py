@@ -1,7 +1,6 @@
 """Screening score calculator (CLAUDE.md §2.2.1).
 
-5개 항목 합산 (총 100점). 페널티는 호출자가 별도로 차감한다.
-가중치는 ``config/strategy_params.yaml#screening.weights``에서 로드.
+5개 항목 합산 (총 100점) + DART 페널티. 가중치는 ``config/strategy_params.yaml``.
 """
 from __future__ import annotations
 
@@ -9,6 +8,27 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from core.indicators import sma
+
+
+DART_DELIST_KEYWORDS = (
+    "관리종목", "투자주의", "투자위험", "투자경고", "거래정지", "상장폐지",
+    "감사의견 거절", "감사범위 제한",
+)
+DART_NEGATIVE_KEYWORDS = (
+    "부도", "회생절차", "감자", "감리", "주식관련사채", "벌금", "과징금",
+    "최대주주 변경", "최대주주변경",
+)
+
+
+def dart_penalty(reports: Sequence[str]) -> tuple[float, str]:
+    """반환: (감점값(음수), 사유). 관리종목류는 -100, 일반 악재는 -20."""
+    for name in reports:
+        if name and any(kw in name for kw in DART_DELIST_KEYWORDS):
+            return -100.0, f"관리/거래정지: {name}"
+    for name in reports:
+        if name and any(kw in name for kw in DART_NEGATIVE_KEYWORDS):
+            return -20.0, f"악재 공시: {name}"
+    return 0.0, ""
 
 
 @dataclass(frozen=True)

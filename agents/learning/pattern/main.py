@@ -1,16 +1,23 @@
-"""Pattern / backtest agent — PAPER MODE ONLY (CLAUDE.md §2.6, §11).
-
-paper 모드에서 일일 journal을 읽어 토픽별 통계를 산출하고
-``learning.proposal`` 토픽으로 CEO에게 제안한다. 자동 파라미터 변경 권한 없음.
-"""
+"""Pattern / backtest agent — PAPER MODE ONLY (CLAUDE.md §2.6, §11)."""
 from __future__ import annotations
 
 import json
 import logging
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from agents.analysis.signal.indicators import (
+    Direction,
+    SignalAnalyzer,
+)
+from agents.learning.pattern.backtest import (
+    BacktestEngine,
+    BacktestParams,
+    BacktestResult,
+)
+from core.indicators import CandleLike
 from core.kis_client import Mode
 from core.messaging import Bus
 
@@ -35,14 +42,24 @@ class DailySummary:
 
 
 class PatternAnalysisAgent:
-    """가벼운 v1: 일일 토픽별 카운트만 산출. 백테스트는 후속 작업."""
+    """일일 journal 요약 + 백테스트 실행 + 제안 발행 (paper 전용)."""
 
-    def __init__(self, mode: Mode, bus: Bus, journal_dir: Path) -> None:
+    def __init__(
+        self,
+        mode: Mode,
+        bus: Bus,
+        journal_dir: Path,
+        *,
+        analyzer: SignalAnalyzer | None = None,
+        backtest_params: BacktestParams | None = None,
+    ) -> None:
         if mode != Mode.PAPER:
             raise PaperModeRequired("pattern analysis is paper-only (§11)")
         self._mode = mode
         self._bus = bus
         self._dir = journal_dir
+        self._analyzer = analyzer
+        self._backtest_params = backtest_params
 
     async def run_daily(self, date: str) -> DailySummary:
         path = self._dir / f"{date}.jsonl"
@@ -73,3 +90,19 @@ class PatternAnalysisAgent:
         log.info("pattern daily summary %s: %d records", date, summary.record_count)
         await self._bus.publish(TOPIC_PROPOSAL, summary)
         return summary
+
+    def backtest(
+        self,
+        candles: Sequence[CandleLike],
+        *,
+        symbol: str = "TEST",
+        direction: Direction = Direction.LONG,
+    ) -> BacktestResult:
+        """주어진 분봉 시퀀스에 대해 walk-forward 백테스트 실행.
+
+        ``analyzer``가 생성자에 주입되지 않은 경우 ``ValueError``.
+        """
+        if self._analyzer is None:
+            raise ValueError("analyzer was not provided to PatternAnalysisAgent")
+        engine = BacktestEngine(self._analyzer, self._backtest_params)
+        return engine.run(candles, symbol=symbol, direction=direction)

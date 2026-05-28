@@ -1,6 +1,6 @@
 """Journal agent — always-on append-only logger (CLAUDE.md §2.6, §11).
 
-모든 토픽을 구독하여 ``data/journal/{YYYYMMDD}.jsonl``에 append.
+모든 토픽을 구독하여 ``data/journal/{YYYYMMDD}.jsonl``에 envelope 포맷으로 append.
 """
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import asdict, is_dataclass
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from agents.analysis.signal.indicators import KST
+from core.kis_client import Mode
 from core.messaging import Bus
+from core.schemas import wrap
 
 log = logging.getLogger(__name__)
 
@@ -31,32 +31,22 @@ SUBSCRIBED_TOPICS = (
 )
 
 
-def _serialize(obj: Any) -> Any:
-    if is_dataclass(obj) and not isinstance(obj, type):
-        return {k: _serialize(v) for k, v in asdict(obj).items()}
-    if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_serialize(v) for v in obj]
-    if isinstance(obj, Enum):
-        return obj.value
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    return obj
-
-
 class JournalAgent:
     def __init__(
         self,
         bus: Bus,
         journal_dir: Path,
         *,
+        mode: Mode | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
         topics: tuple[str, ...] = SUBSCRIBED_TOPICS,
+        sender: str = "bus",
     ) -> None:
         self._bus = bus
         self._dir = journal_dir
+        self._mode = mode.value if mode else "unknown"
         self._clock = clock
+        self._sender = sender
         self._lock = asyncio.Lock()
         for topic in topics:
             self._bus.subscribe(topic, self._make_handler(topic))
@@ -69,12 +59,11 @@ class JournalAgent:
     async def _write(self, topic: str, payload: Any) -> None:
         now = self._clock()
         path = self._dir / f"{now.strftime('%Y%m%d')}.jsonl"
-        record = {
-            "ts": now.isoformat(),
-            "topic": topic,
-            "payload": _serialize(payload),
-        }
+        envelope = wrap(
+            topic, payload,
+            sender=self._sender, mode=self._mode, ts=now,
+        )
         async with self._lock:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+                f.write(json.dumps(envelope, ensure_ascii=False, default=str) + "\n")

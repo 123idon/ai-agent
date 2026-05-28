@@ -169,6 +169,8 @@ class Position(BaseModel):
     evalAmt: int
     pnl: int
     pnlPct: str = "0.00"
+    loanDt: str = ""        # 신용 매수일 YYYYMMDD (현금은 "")
+    crdtType: str = ""      # 신용유형 (21=자기융자신규 등)
 
 
 class BalanceSnapshot(BaseModel):

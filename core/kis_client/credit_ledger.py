@@ -40,6 +40,7 @@ class CreditLedger:
         )
 
     def record_buy(self, code: str, *, when: datetime | None = None) -> str:
+        """잠정 등록 — 매수 직후 호출. 실제 KIS LOAN_DT는 sync_from_balance로 정정."""
         loan_dt = (when or datetime.now(_KST)).strftime("%Y%m%d")
         with self._lock:
             self._cache[code] = loan_dt
@@ -57,4 +58,26 @@ class CreditLedger:
 
     def all(self) -> dict[str, str]:
         with self._lock:
+            return dict(self._cache)
+
+    def sync_from_balance(self, positions) -> dict[str, str]:
+        """traidair Position 리스트로 LOAN_DT를 권위적으로 동기화.
+
+        규칙:
+        - position에 ``loanDt``가 있으면(공백 아니면) 그 값으로 덮어쓴다 (KIS 값이 권위).
+        - position에 ``loanDt``가 비어있으면 cache의 기존 값을 유지 (잠정 record_buy 보존).
+        - 잔고에 없는 종목은 ledger에서 제거 (포지션 청산 완료로 간주).
+        """
+        with self._lock:
+            new_cache: dict[str, str] = {}
+            for p in positions:
+                code = getattr(p, "code", "")
+                qty = getattr(p, "qty", 0)
+                if not code or qty <= 0:
+                    continue
+                loan_dt = getattr(p, "loanDt", "") or self._cache.get(code, "")
+                if loan_dt:
+                    new_cache[code] = loan_dt
+            self._cache = new_cache
+            self._flush()
             return dict(self._cache)

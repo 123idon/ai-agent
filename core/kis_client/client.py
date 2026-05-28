@@ -409,6 +409,18 @@ class KisClient:
             positions=data["positions"],
         )
 
+    async def sync_credit_ledger(self) -> dict[str, str] | None:
+        """현재 잔고의 신용 포지션을 ledger에 권위적으로 반영.
+
+        - traidair는 ``loanDt``(KIS의 ``loan_dt``)를 응답에 포함한다.
+        - 잔고에 없는 종목은 ledger에서 제거된다.
+        - ``CreditLedger``가 주입되지 않은 경우 ``None`` 반환.
+        """
+        if self._ledger is None:
+            return None
+        balance = await self.get_balance()
+        return self._ledger.sync_from_balance(balance.positions)
+
     # ─────────────────────────── 매크로 / DART ───────────────────────────
 
     async def get_market_data(
@@ -448,3 +460,9 @@ class KisClient:
             list=data.get("list", []),
             total=data.get("total", 0),
         )
+
+    async def get_dart_corpcode(self, name: str) -> str | None:
+        """traidair의 hardcoded 종목명 → DART 8자리 corp_code 매핑."""
+        data = await self._get("/api/dart/corpcode", {"nm": name})
+        code = data.get("corp_code")
+        return code if code else None
