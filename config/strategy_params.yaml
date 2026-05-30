@@ -7,7 +7,7 @@
 
 # --- 스크리닝 점수 가중치 (합 100점) ---
 screening:
-  threshold: 80
+  threshold: 65
   weights:
     turnover_rank: 25       # 전일 거래대금
     opening_gap: 20         # 시가 갭
