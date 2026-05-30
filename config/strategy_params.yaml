@@ -20,7 +20,7 @@ screening:
 
 # --- 신호 지표 임계값 (기술적 매수 타점, §5.2) ---
 signal:
-  volume_surge_multiplier: 2.0    # 직전 20분 평균 대비 ≥ 200%
+  volume_surge_multiplier: 1.5    # 직전 20분 평균 대비 ≥ 200%
   rsi:
     period: 14
     oversold: 30
