@@ -76,7 +76,7 @@ stop_loss:
 
 # --- 타임스톱 (CLAUDE.md §5.5) ---
 time_stop:
-  evaluation_minutes: 15
+  evaluation_minutes: 10
   flat_box_pct: 0.005            # ±0.5% 방향 미발생 시 50% 축소 또는 청산
   count_as_stoploss: false       # 연속손절 카운터에 산입 X
 
