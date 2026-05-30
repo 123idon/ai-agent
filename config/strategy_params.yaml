@@ -7,7 +7,7 @@
 
 # --- 스크리닝 점수 가중치 (합 100점) ---
 screening:
-  threshold: 70
+  threshold: 75.0
   weights:
     turnover_rank: 25       # 전일 거래대금
     opening_gap: 20         # 시가 갭
@@ -18,18 +18,23 @@ screening:
     bad_news: -20
     administrative_issue: -100   # 사실상 필터
 
-# --- 신호 지표 임계값 ---
+# --- 신호 지표 임계값 (기술적 매수 타점, §5.2) ---
 signal:
-  volume_surge_multiplier: 2.0    # 직전 20분 평균 대비
+  volume_surge_multiplier: 2.0    # 직전 20분 평균 대비 ≥ 200%
   rsi:
     period: 14
     oversold: 30
     overbought: 70
+    entry_zone: [50, 65]          # 매수 타점 RSI 구간 (§5.2)
   macd:
     fast: 12
     slow: 26
     signal: 9
+  bollinger:                      # 볼린저밴드 (하단 반등/중단 돌파)
+    period: 20
+    num_std: 2.0
   ma_periods: [5, 20, 60]
+  atr_period: 14                  # ATR 기간 (익절 목표가 동적 산출, §5.3)
   candle_patterns:
     long: [hammer, bullish_engulfing, long_bullish]
     short: [shooting_star, bearish_engulfing, long_bearish]
@@ -52,6 +57,10 @@ take_profit:
   step2:
     pct_range: [0.06, 0.08]      # +6 ~ +8% (ATR 기반 사전 지정)
     close_ratio: 0.3
+  # ATR%(=ATR/현재가) 밴딩: < low → 범위 하단, < high → 중앙, ≥ high → 상단
+  atr_bands:
+    low: 0.015
+    high: 0.030
   step3_trailing:
     trail_from_high_pct: 0.015   # 고점 대비 -1.5% 이탈 시 전량
     cutoff_time: "15:20:00"
@@ -62,11 +71,12 @@ stop_loss:
   technical_priority: true       # 진입 캔들 저점 이탈 즉시 청산이 최우선
   entry_candle_low_breach: true  # 1분봉 종가 < 진입 캔들 저점 → 시장가 청산
   signal_breakdown_min_count: 2  # 거래량 소멸/MACD 데드/5MA 이탈 중 2개 이상
+  signal_breakdown_grace_minutes: 5  # 진입 직후 유예(분): 1분봉 노이즈 즉시청산 방지(§5.6)
   hard_max_pct: -0.03            # 안전 하한 (기술적 트리거가 늦을 때만)
 
 # --- 타임스톱 (CLAUDE.md §5.5) ---
 time_stop:
-  evaluation_minutes: 30
+  evaluation_minutes: 25
   flat_box_pct: 0.005            # ±0.5% 방향 미발생 시 50% 축소 또는 청산
   count_as_stoploss: false       # 연속손절 카운터에 산입 X
 
