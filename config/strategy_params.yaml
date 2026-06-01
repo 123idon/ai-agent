@@ -100,7 +100,7 @@ stop_loss:
 time_stop:
   evaluation_minutes: 15        # 30분 경과 시 재평가
   min_profit_pct: 0.01          # 30분 내 +1% 미달 시 50% 청산(기준 상향)
-  flat_box_pct: 0.005           # (구) ±박스 — 호환용·미사용
+  flat_box_pct: 0.7           # (구) ±박스 — 호환용·미사용
   count_as_stoploss: false       # 연속손절 카운터에 산입 X
 
 # --- 운영 모드 (단일) ---
