@@ -224,6 +224,84 @@ def _state_file_path() -> Path:
     return Path(__file__).parents[1] / "state" / "backtest_live.json"
 
 
+def _lock_path() -> Path:
+    return Path(__file__).parents[1] / "state" / "backtest.lock"
+
+
+# 단일 실행 락의 신선도 임계(초). 보유 엔진은 아래 ``_lock_heartbeat`` 가 주기적으로
+# 락 파일 mtime 을 갱신한다 → 이 시간보다 오래 정체된 락은 죽은 엔진의 잔재로 보고 회수한다.
+_LOCK_TTL = 15.0
+
+
+def _lock_payload() -> bytes:
+    return json.dumps({"pid": os.getpid(), "ts": _walltime.time()}).encode("utf-8")
+
+
+def _touch_lock() -> None:
+    """우리가 보유한 락의 mtime/내용을 갱신(하트비트). 우리 pid 일 때만 기록한다."""
+    lp = _lock_path()
+    try:
+        if json.loads(lp.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            lp.write_text(_lock_payload().decode("utf-8"), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — 락 파일이 없거나 손상돼도 비치명
+        pass
+
+
+def _acquire_singleton_lock() -> bool:
+    """원자적 단일 실행 락을 시도한다 → 우리가 보유하게 되면 True, 다른 엔진이 살아있으면 False.
+
+    **이중 실행(2개 엔진 동시 기동) 근본 차단**(요구: "2일 만에 끝남"의 진짜 원인).
+    기존 ``_foreign_engine_active`` 는 *이미 상태파일을 쓰고 있는* 엔진만 감지해, **같은
+    순간 둘이 동시에 시작하면 둘 다 통과**하는 레이스가 있었다(상태파일이 아직 없음).
+    여기서는 ``O_CREAT|O_EXCL`` 원자적 생성으로 **정확히 하나만** 락을 잡는다:
+      - 동시 기동: OS가 한쪽만 생성 성공시킨다. 진 쪽은 ``FileExistsError`` 를 받고,
+        락 파일 mtime 이 신선(<TTL)하면 **상대가 살아있다**고 보고 양보(False).
+      - 죽은 엔진의 잔재(크래시 등으로 남은 락): mtime 이 TTL 보다 오래됐으면 회수 후 재시도.
+    상태파일 파싱에 의존하지 않고 **파일 mtime**(원자적으로 설정됨)으로 신선도를 보므로
+    부분 기록 레이스도 없다. Windows 에서 ``os.kill`` 로 pid 생존을 확인하지 않는다(§26).
+    """
+    lp = _lock_path()
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(3):
+        try:
+            fd = os.open(str(lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, _lock_payload())
+            finally:
+                os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                age = _walltime.time() - lp.stat().st_mtime
+            except OSError:
+                continue   # 방금 사라짐 — 재시도
+            if age < _LOCK_TTL:
+                # 우리 자신의 락이면(재진입) 보유로 간주.
+                try:
+                    if json.loads(lp.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                        return True
+                except Exception:  # noqa: BLE001
+                    pass
+                return False    # 신선한 락 = 다른 엔진이 살아있음 → 양보
+            # 정체된 락(죽은 엔진 잔재) → 회수 후 재시도.
+            try:
+                os.unlink(str(lp))
+            except OSError:
+                pass
+            continue
+    return False
+
+
+def _release_singleton_lock() -> None:
+    """우리가 보유한 락만 해제(다른 엔진 락은 건드리지 않는다)."""
+    lp = _lock_path()
+    try:
+        if json.loads(lp.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            lp.unlink()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _foreign_engine_active() -> bool:
     """다른 백테스트 엔진이 **지금 살아서 돌고 있는지** 판정(단일 실행 보장).
 
@@ -306,17 +384,23 @@ def main() -> int:
     """
     _setup_logging()
 
-    # ── 단일 실행 보장(요구 3): 다른 백테스트 엔진이 가동 중이면 시작을 양보한다. ──
-    # 한 번에 하나의 엔진만 돈다. 두 엔진이 같은 state/ 제어판을 두고 싸우면 서로를
-    # 종료시키는 충돌(요구 1·2의 "start.bat 쪽 종료"·"즉시 종료")이 난다. 개발용으로
-    # 의도적으로 병렬 실행하려면 BACKTEST_ALLOW_PARALLEL=1 로 우회한다.
-    if (os.getenv("BACKTEST_ALLOW_PARALLEL") or "0") != "1" and _foreign_engine_active():
-        log.warning("=" * 60)
-        log.warning("⚠️ 이미 다른 백테스트 엔진이 실행 중입니다 — 중복 실행을 막기 위해 종료합니다.")
-        log.warning("   (브라우저 HTS의 '▶ 백테스트' 버튼이 유일한 실행 경로입니다.")
-        log.warning("    개발용 병렬 실행이 꼭 필요하면 BACKTEST_ALLOW_PARALLEL=1 로 우회하세요.)")
-        log.warning("=" * 60)
-        return 0
+    # ── 단일 실행 보장(요구: "2일 만에 끝남" 근본 원인 = 이중 실행). ──
+    # 한 번에 하나의 엔진만 돈다. 두 엔진이 같은 state/ 제어판(상태파일·STOP/PAUSE/KILL
+    # 센티넬)을 두고 싸우면 한쪽의 정지/정리가 다른 쪽을 조기 종료시켜 "며칠 만에 끝남"
+    # 증상이 난다. 원자적 락으로 동시 기동 레이스까지 차단한다(개발용 병렬은
+    # BACKTEST_ALLOW_PARALLEL=1 로 우회).
+    if (os.getenv("BACKTEST_ALLOW_PARALLEL") or "0") != "1":
+        if not _acquire_singleton_lock():
+            log.warning("=" * 60)
+            log.warning("⚠️ 이미 다른 백테스트 엔진이 실행 중입니다 — 중복 실행을 막기 위해 종료합니다.")
+            log.warning("   (브라우저 HTS의 '▶ 백테스트' 버튼이 유일한 실행 경로입니다.")
+            log.warning("    개발용 병렬 실행이 꼭 필요하면 BACKTEST_ALLOW_PARALLEL=1 로 우회하세요.)")
+            log.warning("=" * 60)
+            return 0
+        log.info("🔒 단일 실행 락 획득 (pid=%d) — 이 엔진만 백테스트를 구동합니다.", os.getpid())
+        # 어떤 종료 경로(정상/예외/Ctrl+C)에서도 우리 락만 해제(다른 엔진 락은 불침).
+        import atexit
+        atexit.register(_release_singleton_lock)
 
     kill_path = _kill_switch_path()
     # 시작 시 이전 실행의 kill 센티넬을 제거(과거 잔재로 즉시 종료되는 것 방지).
@@ -370,6 +454,7 @@ def main() -> int:
                     if kill_path.exists():
                         log.info("⏹ kill_switch 감지 — 종료합니다.")
                         return 0
+                    _touch_lock()   # 긴 백오프 동안 락이 정체(stale)되어 회수당하지 않게 갱신.
                     _walltime.sleep(0.25)
                     slept += 0.25
             except KeyboardInterrupt:
@@ -678,7 +763,13 @@ async def _run_backtest() -> int:
         pass   # 비메인 스레드 등에서는 무시
 
     async def _stop_watcher() -> None:
+        # 실행 내내 단일 실행 락을 신선하게 유지(하트비트, ~2초마다). 장시간(수 시간)
+        # 백테스트 동안 락 mtime 이 TTL 을 넘겨 다른 기동이 stale 로 오인·회수하는 것 방지.
+        _hb = 0
         while not stop.is_set():
+            _hb += 1
+            if _hb % 10 == 0:        # 0.2s 폴링 × 10 ≈ 2s
+                _touch_lock()
             if stop_sentinel.exists():
                 log.warning("정지 센티넬 감지 — 백테스트 중단")
                 user_stop["v"] = True
