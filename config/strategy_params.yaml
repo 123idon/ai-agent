@@ -7,7 +7,8 @@
 
 # --- 스크리닝 점수 가중치 (합 100점) ---
 screening:
-  threshold: 85
+  threshold: 70    # CLAUDE.md §5.1 SSOT 값. consult 자동튜닝이 70→80→85로 끌어올려 후보 funnel을
+                   # 0으로 굶겨(진입 0건) 죽음의 나선(§19) 직전까지 갔던 것을 SSOT로 복원.
   weights:
     turnover_rank: 25       # 전일 거래대금
     opening_gap: 20         # 시가 갭
