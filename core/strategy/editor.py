@@ -46,8 +46,14 @@ TUNE_BOUNDS_SCALAR: dict[str, tuple[float, float]] = {
     "screening.threshold": (70.0, 80.0),           # SSOT 70(§5.1). 80 초과 = funnel 굶음
     "signal.volume_surge_multiplier": (1.5, 3.0),  # 너무 높이면 진입 0
     "signal.rsi.overbought": (65.0, 80.0),         # 너무 낮추면 과매수 차단이 진입을 굶음
-    "stop_loss.hard_max_pct": (-0.03, -0.015),     # §5.4 -2%. -1.5%보다 빡빡/-3%보다 느슨 금지
-    "time_stop.evaluation_minutes": (10.0, 40.0),
+    # 손절 안전범위(요구 5): 운영자가 -0.5%~-10% 사이에서만 조정 가능. 양수/0/과도한 손절 차단.
+    "stop_loss.hard_max_pct": (-0.10, -0.005),     # 최대 손절 -0.5% ~ -10%
+    "stop_loss.technical_buffer_pct": (0.0, 0.05), # 진입캔들 저점 버퍼 0 ~ 5%
+    # 타임스톱 안전범위(요구 5)
+    "time_stop.evaluation_minutes": (5.0, 120.0),       # 메인 체크 5~120분
+    "time_stop.min_profit_pct": (0.0, 0.05),            # 메인 체크 기준 수익 0~5%
+    "time_stop.first_check_minutes": (0.0, 60.0),       # 1차 체크 0(비활성)~60분
+    "time_stop.first_check_min_profit_pct": (-0.05, 0.05),
 }
 # 인라인 리스트(원소별 (min,max)). entry_zone=[low,high] — low를 올려 진입창을 굶기지 못하게.
 TUNE_BOUNDS_LIST: dict[str, tuple[tuple[float, float], ...]] = {

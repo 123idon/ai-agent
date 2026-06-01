@@ -25,13 +25,20 @@ signal:
     entry_zone: [50, 65]
     overbought: 70
 stop_loss:
+  technical_stop_enabled: true
+  technical_buffer_pct: 0.005
   hard_max_pct: -0.03
 take_profit:
   step1:
     pct_range: [0.03, 0.05]
     close_ratio: 0.5
 time_stop:
+  enabled: true
   evaluation_minutes: 30
+  min_profit_pct: 0.01
+  action: "reduce_50"
+  first_check_minutes: 15
+  first_check_action: "hold"
 """
 
 
@@ -78,6 +85,28 @@ def test_parser_timestop_and_hardstop() -> None:
 
 def test_parser_ignores_vague_text() -> None:
     assert extract_changes("오늘 시장이 안 좋네요 조심합시다") == []
+
+
+def test_parser_technical_buffer_not_confused_with_hard_stop() -> None:
+    # "기술적 손절 버퍼 1%" → technical_buffer_pct (하드 손절로 오인하지 않음)
+    sugg = {s.key: s.value for s in extract_changes("기술적 손절 버퍼를 1%로 늘리자")}
+    assert abs(sugg["stop_loss.technical_buffer_pct"] - 0.01) < 1e-9
+    assert "stop_loss.hard_max_pct" not in sugg
+
+
+def test_parser_first_check_and_main_timestop() -> None:
+    sugg = {s.key: s.value for s in
+            extract_changes("1차 타임스톱 10분, 타임스톱 25분으로 하고 전량 청산으로")}
+    assert sugg["time_stop.first_check_minutes"] == 10
+    assert sugg["time_stop.evaluation_minutes"] == 25
+    assert sugg["time_stop.action"] == "exit_all"
+
+
+def test_parser_timestop_min_profit_and_toggle() -> None:
+    sugg = {s.key: s.value for s in
+            extract_changes("타임스톱 수익 0.5% 미만이면 정리, 기술적 손절 끄기")}
+    assert abs(sugg["time_stop.min_profit_pct"] - 0.005) < 1e-9
+    assert sugg["stop_loss.technical_stop_enabled"] is False
 
 
 # ─────────────────────────── StrategyEditor ───────────────────────────
@@ -175,12 +204,40 @@ def test_clamp_entry_zone_low_bounded(tmp_path: Path) -> None:
     assert "보정" in res.reason
 
 
-def test_clamp_hard_stop_too_tight_bounded(tmp_path: Path) -> None:
-    # 하드 손절을 -1%(너무 빡빡)로 조이려 해도 -1.5% 로 보정(잦은 손절 → 무거래 방지).
+def test_hard_stop_within_range_applied_as_is(tmp_path: Path) -> None:
+    # 손절 안전범위(-0.5%~-10%, 요구 5) 안의 값은 보정 없이 그대로 적용.
     editor = _paper_editor(tmp_path)
     res = editor.apply("stop_loss.hard_max_pct", -0.01, ts="t", date="d", source="review")
     assert res.ok
-    assert abs(res.after - (-0.015)) < 1e-9
+    assert abs(res.after - (-0.01)) < 1e-9        # -1%는 범위 안 → 그대로
+    assert "보정" not in res.reason
+
+
+def test_hard_stop_too_tight_clamped_to_min(tmp_path: Path) -> None:
+    # -0.3%(너무 빡빡, 잦은 손절)는 하한 -0.5%로 보정.
+    editor = _paper_editor(tmp_path)
+    res = editor.apply("stop_loss.hard_max_pct", -0.003, ts="t", date="d", source="review")
+    assert res.ok
+    assert abs(res.after - (-0.005)) < 1e-9
+    assert "보정" in res.reason
+
+
+def test_hard_stop_too_loose_clamped_to_max(tmp_path: Path) -> None:
+    # -15%(너무 느슨, 큰 손실)는 상한 -10%로 보정(요구 5 안전장치).
+    editor = _paper_editor(tmp_path)
+    res = editor.apply("stop_loss.hard_max_pct", -0.15, ts="t", date="d", source="review")
+    assert res.ok
+    assert abs(res.after - (-0.10)) < 1e-9
+    assert "보정" in res.reason
+
+
+def test_time_stop_min_profit_clamped(tmp_path: Path) -> None:
+    # 타임스톱 수익 기준 안전범위 0~5%: 10% 요청 → 5%로 보정.
+    editor = _paper_editor(tmp_path)
+    res = editor.apply("time_stop.min_profit_pct", 0.10, ts="t", date="d", source="review")
+    assert res.ok
+    assert abs(res.after - 0.05) < 1e-9
+    assert "보정" in res.reason
 
 
 # ─────────────────────────── ConsultLog ───────────────────────────

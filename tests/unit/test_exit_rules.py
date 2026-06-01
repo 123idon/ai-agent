@@ -4,12 +4,15 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
+from dataclasses import replace
+
 from agents.execution.position_manager.exit_rules import (
     KST,
     CounterEffect,
     ExitKind,
     ExitParams,
     LivePositionState,
+    action_ratio,
     evaluate_exit,
     select_tp_targets,
 )
@@ -183,6 +186,85 @@ def test_no_time_stop_when_moving() -> None:
     assert a.kind == ExitKind.HOLD
 
 
+# ─────────── 타임스톱 2단 체크 + action 설정 (요구 1·2) ───────────
+
+
+def test_action_ratio_mapping() -> None:
+    assert action_ratio("hold") == 0.0
+    assert action_ratio("reduce_50") == 0.5
+    assert action_ratio("exit_all") == 1.0
+    assert action_ratio("EXIT_ALL") == 1.0       # 대소문자 무시
+    assert action_ratio("garbage") == 0.5        # 알 수 없으면 보수적 절반
+
+
+def test_time_stop_disabled() -> None:
+    # enabled=False면 타임스톱 발동 안 함 → HOLD
+    p = replace(_params(), time_stop_enabled=False)
+    entry_time = _now() - timedelta(minutes=31)
+    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
+                      breakdown_count=0, params=p)
+    assert a.kind == ExitKind.HOLD
+
+
+def test_time_stop_action_exit_all() -> None:
+    # action=exit_all이면 메인 체크가 전량(ratio 1.0) 청산
+    p = replace(_params(), time_stop_action="exit_all")
+    entry_time = _now() - timedelta(minutes=31)
+    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
+                      breakdown_count=0, params=p)
+    assert a.kind == ExitKind.TIME_STOP
+    assert a.ratio == 1.0
+    assert a.counter == CounterEffect.NEUTRAL
+
+
+def test_first_check_hold_does_not_sell() -> None:
+    # 1차 체크(15분, hold)는 청산하지 않고 보류 → 메인(30분) 전엔 HOLD
+    p = replace(_params(), time_stop_first_minutes=15, time_stop_first_action="hold")
+    entry_time = _now() - timedelta(minutes=20)   # 15 ≤ 20 < 30
+    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
+                      breakdown_count=0, params=p)
+    assert a.kind == ExitKind.HOLD
+
+
+def test_first_check_reduce_then_main() -> None:
+    p = replace(
+        _params(), time_stop_first_minutes=15, time_stop_first_action="reduce_50",
+    )
+    # 20분 경과(1차 구간) + 수익 미달(기본 first_min_profit 0.0, ret<0) → 1차 50% 청산
+    a = evaluate_exit(
+        _state(entry_time=_now() - timedelta(minutes=20)), price=9_980, now=_now(),
+        breakdown_count=0, params=p,
+    )
+    assert a.kind == ExitKind.TIME_STOP_FIRST
+    assert a.ratio == 0.5
+    assert a.counter == CounterEffect.NEUTRAL
+    # 1차 완료 표시 후에는 1차 재발동 없이 메인(30분)이 발동
+    st = _state(entry_time=_now() - timedelta(minutes=31))
+    st.time_stop_first_done = True
+    main = evaluate_exit(st, price=10_010, now=_now(), breakdown_count=0, params=p)
+    assert main.kind == ExitKind.TIME_STOP
+
+
+def test_first_check_skipped_when_profitable() -> None:
+    # 1차 구간이지만 수익 기준 이상이면 청산 안 함
+    p = replace(
+        _params(), time_stop_first_minutes=15, time_stop_first_action="reduce_50",
+        time_stop_first_min_profit=0.0,
+    )
+    a = evaluate_exit(
+        _state(entry_time=_now() - timedelta(minutes=20)), price=10_050, now=_now(),
+        breakdown_count=0, params=p,
+    )
+    assert a.kind == ExitKind.HOLD
+
+
+def test_technical_stop_disabled() -> None:
+    # technical_stop_enabled=False → use_technical_stop False → 기술적 손절 미발동(하드만)
+    p = replace(_params(), use_technical_stop=False, technical_stop_enabled=False)
+    a = evaluate_exit(_state(), price=9_840, now=_now(), breakdown_count=0, params=p)
+    assert a.kind == ExitKind.HOLD   # 9840은 하드(-2%=9800) 미도달, 기술적 꺼짐 → 보유
+
+
 # ─────────────────────────── EOD ───────────────────────────
 
 
@@ -270,11 +352,18 @@ def test_from_file_reads_strategy_params() -> None:
     assert p.hard_stop_pct == -0.02                  # 최대 손절 -2%
     assert p.technical_buffer_pct == 0.005           # 진입캔들 저점 -0.5%
     assert p.use_technical_stop is True
+    assert p.technical_stop_enabled is True          # 요구 1: yaml에서 읽음
     # 타임스톱 분은 consult/auto-learn 이 수시로 조정(§5.5·§24)하므로 하드코딩하지 않고
     # 파일 실제값과 일치하는지(=from_file 매핑 정확성)만 본다.
     import yaml
     _doc = yaml.safe_load((ROOT / "config" / "strategy_params.yaml").read_text(encoding="utf-8"))
-    assert p.time_stop_minutes == _doc["time_stop"]["evaluation_minutes"]
-    assert p.time_stop_min_profit == 0.01            # +1% 미달
+    _ts = _doc["time_stop"]
+    assert p.time_stop_enabled == _ts["enabled"]
+    assert p.time_stop_minutes == _ts["evaluation_minutes"]
+    assert p.time_stop_min_profit == _ts["min_profit_pct"]
+    assert p.time_stop_action == _ts["action"]                       # reduce_50 | exit_all
+    assert p.time_stop_first_minutes == _ts["first_check_minutes"]
+    assert p.time_stop_first_action == _ts["first_check_action"]
+    assert p.time_stop_first_min_profit == _ts["first_check_min_profit_pct"]
     assert p.cutoff_time == time(15, 20, 0)
     assert p.force_close_time == time(15, 20, 0)

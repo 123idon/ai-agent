@@ -88,18 +88,33 @@ take_profit:
     force_close_time: "15:20:00" # 보유분 전량 강제청산 (예외 없음)
 
 # --- 손절 룰 (CLAUDE.md §5.4 개정) ---
+# ⚙️ 손절 값은 상담(💬)·회의(🤝)에서 자연어로 바꿀 수 있다(§24). 변경은 StrategyEditor
+#    단일 진입점(화이트리스트→leaf 교체→재읽기 검증→git 커밋→ImprovementLog)을 거치며,
+#    다음 백테스트/모의투자 세션부터 새 값이 적용된다(ExitParams.from_file). 코드에는
+#    하드코딩 값이 없고 본 파일이 단일 진실 공급원이다(아래 값이 곧 운영값).
+#    안전범위(core/strategy/editor.py TUNE_BOUNDS): hard_max_pct -10%~-0.5%,
+#    technical_buffer_pct 0~5% — 범위 밖 요청은 가장 가까운 경계로 자동 보정.
 stop_loss:
   technical_priority: true       # 진입 캔들 저점 이탈 즉시 청산이 최우선
+  technical_stop_enabled: true   # 기술적 손절(진입 캔들 저점 이탈) 사용 여부 — off면 하드 손절만
   entry_candle_low_breach: true  # 분봉 종가 < 진입 캔들 저점 → 시장가 청산
   technical_buffer_pct: 0.005    # 진입 캔들 저점 -0.5% 이탈 시(너무 빡빡하지 않게, §5.4 개정)
   signal_breakdown_min_count: 2  # 거래량 소멸/MACD 데드/5MA 이탈 중 2개 이상
   signal_breakdown_grace_minutes: 5  # 진입 직후 유예(분): 분봉 노이즈 즉시청산 방지(§5.6)
   hard_max_pct: -0.02            # 최대 손절 -2%(기존 -3%에서 축소, §5.4 개정)
 
-# --- 타임스톱 (CLAUDE.md §5.5 개정) ---
+# --- 타임스톱 (CLAUDE.md §5.5 개정, 2단 체크) ---
+# ⚙️ 타임스톱도 상담·회의에서 변경 가능(§24). action: reduce_50(50% 청산) | exit_all(전량).
+#    1차 체크(first_check_*)는 메인 체크 전 구간에서 1회 평가하며, hold면 보류(아무 동작 없음).
+#    안전범위: evaluation_minutes 5~120분, first_check_minutes 0~60분, min_profit_pct 0~5%.
 time_stop:
-  evaluation_minutes: 15        # 30분 경과 시 재평가
-  min_profit_pct: 0.01          # 30분 내 +1% 미달 시 50% 청산(기준 상향)
+  enabled: true                 # 타임스톱 전체 on/off
+  evaluation_minutes: 30        # 메인 체크: 진입 후 N분 경과 시 재평가
+  min_profit_pct: 0.01          # 메인 체크 기준 수익(미달 시 action 발동, +1% 미달 → 청산)
+  action: "reduce_50"           # 메인 체크 동작: reduce_50(50% 청산) | exit_all(전량 청산)
+  first_check_minutes: 15       # 1차 체크 시간(분) — 0이면 1차 체크 비활성
+  first_check_action: "hold"    # 1차 체크 동작: hold(보류) | reduce_50 | exit_all
+  first_check_min_profit_pct: 0.0  # 1차 체크 기준 수익(미달 시 first_check_action 발동)
   flat_box_pct: 0.7           # (구) ±박스 — 호환용·미사용
   count_as_stoploss: false       # 연속손절 카운터에 산입 X
 
