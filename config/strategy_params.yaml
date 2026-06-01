@@ -112,7 +112,7 @@ time_stop:
   evaluation_minutes: 30        # 메인 체크: 진입 후 N분 경과 시 재평가
   min_profit_pct: 0.01          # 메인 체크 기준 수익(미달 시 action 발동, +1% 미달 → 청산)
   action: "reduce_50"           # 메인 체크 동작: reduce_50(50% 청산) | exit_all(전량 청산)
-  first_check_minutes: 12       # 1차 체크 시간(분) — 0이면 1차 체크 비활성
+  first_check_minutes: 15       # 1차 체크 시간(분) — 0이면 1차 체크 비활성
   first_check_action: "hold"    # 1차 체크 동작: hold(보류) | reduce_50 | exit_all
   first_check_min_profit_pct: 0.0  # 1차 체크 기준 수익(미달 시 first_check_action 발동)
   flat_box_pct: 0.7           # (구) ±박스 — 호환용·미사용
