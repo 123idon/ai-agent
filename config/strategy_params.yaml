@@ -21,12 +21,12 @@ screening:
 
 # --- 신호 지표 임계값 (일봉 게이트 + 5분봉 돌파 타점, §5.2 개정) ---
 signal:
-  volume_surge_multiplier: 2.5    # (구) 분봉 거래량 임계 — 호환용
+  volume_surge_multiplier: 2.0    # (구) 분봉 거래량 임계 — 호환용
   rsi:
     period: 14
     oversold: 30
     overbought: 70
-    entry_zone: [50, 65]          # 분봉 매수 타점 RSI 구간 (§5.2)
+    entry_zone: [50, 72]          # 분봉 매수 타점 RSI 구간 (§5.2) — funnel 완화(65→72)
   macd:
     fast: 12
     slow: 26
@@ -38,21 +38,21 @@ signal:
   atr_period: 14                  # ATR 기간 (익절 목표가 동적 산출, §5.3)
   # 5분봉 진입 타점 (§5.2 개정)
   breakout:
-    lookback: 10                  # 직전 고점 산출 윈도우(직전 N봉)
-    volume_mult: 2.0              # 돌파 캔들 거래량 ≥ 직전 캔들 × 200%
+    lookback: 5                   # 직전 고점 산출 윈도우(직전 N봉) — funnel 완화(10→5)
+    volume_mult: 1.5              # 돌파 캔들 거래량 ≥ 직전 캔들 × 150% — funnel 완화(2.0→1.5)
   # 일봉 추세 게이트 (전부 충족 시에만 진입, §5.2 개정)
   daily:
     ma_period: 20                 # 일봉 종가 > 20MA
     rsi_period: 14
     rsi_min: 50                   # 일봉 RSI ≥ 50
-    rsi_overbought: 70            # 일봉 RSI ≥ 70 → 진입 금지
+    rsi_overbought: 78            # 일봉 RSI ≥ 78 → 진입 금지 — funnel 완화(70→78)
     recent_days: 3                # 최근 3일 중
     bullish_min: 2                #   양봉 ≥ 2개
     vol_lookback: 5              # 전일 거래량 ≥ 5일 평균 ×
-    vol_mult: 1.5                 #   150%
+    vol_mult: 1.2                 #   120% — funnel 완화(1.5→1.2)
   # 진입 금지 조건 (§5.2 개정)
   entry_block:
-    resistance_pct: 0.02          # 일봉 고점 대비 -2% 이내(저항선 근처) → 금지
+    resistance_pct: 0.005         # 일봉 고점 대비 -0.5% 이내(저항선 근처) → 금지 — funnel 완화(2%→0.5%)
     resistance_lookback: 20       # 저항 산출 일수
     consecutive_down: 3           # 3일 연속 음봉 → 금지
   candle_patterns:
