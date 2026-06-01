@@ -95,6 +95,58 @@ threading.excepthook = lambda a: _crash_dump(  # type: ignore[assignment]
     a.exc_value or RuntimeError("thread error (no value)"),
 )
 
+
+def _check_interpreter() -> None:
+    """인터프리터 가드 — 잘못된 python 으로 띄우면 **import 단계에서 즉사**하는 문제 차단.
+
+    server.js ``btPython()`` 은 ``.venv`` 를 우선하지만, 터미널/수동 실행 시 시스템
+    python 으로 띄우면 의존성(pyyaml/httpx 등)이 없어 ``ModuleNotFoundError`` 로
+    조용히 죽는다(원인이 "No module named 'yaml'" 처럼 모호하게 보임). 여기서 heavy
+    import **전에** venv 여부 + 핵심 의존성을 확인해, 죽을 운명이면 **명확한 한국어
+    안내**를 stderr + 크래시 파일에 남기고 **종료코드 2**(인터프리터 문제, exit 1과 구분)로
+    깔끔히 종료한다. logging 미설정 단계라 stderr 로 직접 출력한다(_crash_dump 와 동일).
+    """
+    root = Path(__file__).parents[1]
+    venv_py = root / ".venv" / "Scripts" / "python.exe"
+    try:
+        in_venv = venv_py.exists() and Path(sys.prefix).resolve() == (root / ".venv").resolve()
+    except Exception:  # noqa: BLE001
+        in_venv = False
+    try:
+        import yaml  # noqa: F401 — 핵심 의존성 존재 확인용 canary
+        deps_ok = True
+    except Exception:  # noqa: BLE001
+        deps_ok = False
+    if deps_ok and in_venv:
+        return   # 정상 — HTS '▶ 백테스트' 버튼의 정상 경로.
+    if deps_ok and not in_venv:
+        sys.stderr.write(
+            f"⚠️ .venv 밖의 python 으로 실행 중입니다 ({sys.executable}) — "
+            "의존성은 확인됐으나 프로젝트 .venv 사용을 권장합니다.\n"
+        )
+        sys.stderr.flush()
+        return
+    # 의존성 없음 → 아래 heavy import 에서 죽을 운명. 명확히 안내하고 코드 2로 종료.
+    msg = (
+        "이 백테스트는 프로젝트 가상환경(.venv)의 python 으로 실행해야 합니다.\n"
+        f"   현재 인터프리터: {sys.executable}\n"
+        f"   기대 인터프리터: {venv_py}\n"
+        "   핵심 의존성(pyyaml 등)이 없어 import 단계에서 종료됩니다.\n"
+        "   해결: HTS '▶ 백테스트' 버튼으로 실행하거나, 터미널이라면\n"
+        f"        \"{venv_py}\" scripts\\run_backtest.py  로 실행하세요."
+    )
+    _write_crash_file("interpreter-guard", msg)
+    bar = "=" * 70
+    try:
+        sys.stderr.write(f"\n{bar}\n❌ 잘못된 파이썬 인터프리터\n{bar}\n{msg}\n{bar}\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001
+        pass
+    raise SystemExit(2)
+
+
+_check_interpreter()
+
 from agents.analysis.signal.indicators import SignalAnalyzer, SignalParams
 from agents.analysis.signal.main import TOPIC_ENTRY, SignalAgent
 from agents.execution.order.main import OrderAgent
