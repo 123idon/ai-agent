@@ -74,7 +74,7 @@ entry:
   # 포지션 사이징 (리스크부 동적 사이징, §5.3 / §25.3) — 상담(💬)·회의(🤝)에서 조정 가능.
   # 매수금액 = 가용현금 × credit_multiplier × cash_fraction. 안전범위는 editor.TUNE_BOUNDS.
   sizing:
-    cash_fraction_strong: 0.7       # STRONG + 일봉 강세: 가용현금 × credit_multiplier × 0.7
+    cash_fraction_strong: 0.1       # STRONG + 일봉 강세: 가용현금 × credit_multiplier × 0.7
     cash_fraction_conditional: 0.4  # CONDITIONAL: × credit_multiplier × 0.4
     credit_multiplier: 2.0          # 신용 포함 매수여력 배수 (가용현금 × 2)
 
