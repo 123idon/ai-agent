@@ -58,9 +58,12 @@ signal:
   candle_patterns:
     long: [hammer, bullish_engulfing, long_bullish]
     short: [shooting_star, bearish_engulfing, long_bearish]
+  # 진입에 필요한 분봉 타점 충족 개수 (§5.2). 상담(💬)·회의(🤝)에서 "신호 조건 N개로"처럼
+  # 자연어로 바꿀 수 있다(StrategyEditor 단일 진입점 → 다음 백테스트/세션부터 반영).
+  # 안전범위(editor.TUNE_BOUNDS): 1~4 (분봉 타점은 총 4개) — 범위 밖은 경계로 보정.
   entry_rules:
-    strong_min_indicators: 4      # 분봉 타점 4개 전부
-    conditional_min_indicators: 3 # 3개
+    strong_min_indicators: 3      # STRONG 판정 기준(=진입 필요 개수). 4개 전부 충족
+    conditional_min_indicators: 3 # CONDITIONAL 판정 기준. 3개 충족
 
 # --- 진입 (분할 매수) ---
 entry:
@@ -68,6 +71,12 @@ entry:
   conditional_cap_pct: 0.7
   # 1종목 비중 상한 없음. 신용 포함 동적 사이징은 리스크부에서 결정.
   use_margin_when_available: true
+  # 포지션 사이징 (리스크부 동적 사이징, §5.3 / §25.3) — 상담(💬)·회의(🤝)에서 조정 가능.
+  # 매수금액 = 가용현금 × credit_multiplier × cash_fraction. 안전범위는 editor.TUNE_BOUNDS.
+  sizing:
+    cash_fraction_strong: 0.7       # STRONG + 일봉 강세: 가용현금 × credit_multiplier × 0.7
+    cash_fraction_conditional: 0.4  # CONDITIONAL: × credit_multiplier × 0.4
+    credit_multiplier: 2.0          # 신용 포함 매수여력 배수 (가용현금 × 2)
 
 # --- 익절 룰 (3단 구조, CLAUDE.md §5.3) ---
 take_profit:
