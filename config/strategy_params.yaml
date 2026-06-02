@@ -101,7 +101,7 @@ stop_loss:
   technical_buffer_pct: 0.005    # 진입 캔들 저점 -0.5% 이탈 시(너무 빡빡하지 않게, §5.4 개정)
   signal_breakdown_min_count: 2  # 거래량 소멸/MACD 데드/5MA 이탈 중 2개 이상
   signal_breakdown_grace_minutes: 5  # 진입 직후 유예(분): 분봉 노이즈 즉시청산 방지(§5.6)
-  hard_max_pct: -0.03            # 최대 손절 -3%(§5.4)
+  hard_max_pct: -0.025            # 최대 손절 -3%(§5.4)
 
 # --- 타임스톱: 제거됨 (CLAUDE.md §5.5) ---
 # 시간 기반 매도(일정 시간 방향이 안 나오면 청산)는 시스템에서 완전히 제거되었다.
