@@ -7,7 +7,7 @@
 
 # --- 스크리닝 점수 가중치 (합 100점) ---
 screening:
-  threshold: 70    # CLAUDE.md §5.1 SSOT 값. consult 자동튜닝이 70→80→85로 끌어올려 후보 funnel을
+  threshold: 75    # CLAUDE.md §5.1 SSOT 값. consult 자동튜닝이 70→80→85로 끌어올려 후보 funnel을
                    # 0으로 굶겨(진입 0건) 죽음의 나선(§19) 직전까지 갔던 것을 SSOT로 복원.
   weights:
     turnover_rank: 25       # 전일 거래대금
@@ -69,20 +69,20 @@ entry:
   # 1종목 비중 상한 없음. 신용 포함 동적 사이징은 리스크부에서 결정.
   use_margin_when_available: true
 
-# --- 익절 룰 (3단 구조, 최소 목표 상향, CLAUDE.md §5.3 개정) ---
+# --- 익절 룰 (3단 구조, CLAUDE.md §5.3) ---
 take_profit:
   step1:
     pct_range: [0.03, 0.05]      # +3 ~ +5% (ATR 기반 사전 지정)
-    close_ratio: 0.4             # 40% 청산
+    close_ratio: 0.5             # 50% 청산
   step2:
-    pct_range: [0.06, 0.10]      # +6 ~ +10% (ATR 기반 사전 지정)
-    close_ratio: 0.4             # 40% 청산
+    pct_range: [0.06, 0.08]      # +6 ~ +8% (ATR 기반 사전 지정)
+    close_ratio: 0.3             # 30% 청산
   # ATR%(=ATR/현재가) 밴딩: < low → 범위 하단, < high → 중앙, ≥ high → 상단
   atr_bands:
     low: 0.015
     high: 0.030
   step3_trailing:
-    trail_from_high_pct: 0.02    # 고점 대비 -2% 이탈 시 잔량 전량(§5.3 개정)
+    trail_from_high_pct: 0.015   # 고점 대비 -1.5% 이탈 시 잔량 전량(§5.3)
     # §5.7 EOD 강제청산: 당일 매수분은 어떤 조건에서도 예외 없이 15:20 전량 청산(이월 금지).
     cutoff_time: "15:20:00"      # 트레일링 종료
     force_close_time: "15:20:00" # 보유분 전량 강제청산 (예외 없음)
@@ -101,22 +101,13 @@ stop_loss:
   technical_buffer_pct: 0.005    # 진입 캔들 저점 -0.5% 이탈 시(너무 빡빡하지 않게, §5.4 개정)
   signal_breakdown_min_count: 2  # 거래량 소멸/MACD 데드/5MA 이탈 중 2개 이상
   signal_breakdown_grace_minutes: 5  # 진입 직후 유예(분): 분봉 노이즈 즉시청산 방지(§5.6)
-  hard_max_pct: -0.02            # 최대 손절 -2%(기존 -3%에서 축소, §5.4 개정)
+  hard_max_pct: -0.03            # 최대 손절 -3%(§5.4)
 
-# --- 타임스톱 (CLAUDE.md §5.5 개정, 2단 체크) ---
-# ⚙️ 타임스톱도 상담·회의에서 변경 가능(§24). action: reduce_50(50% 청산) | exit_all(전량).
-#    1차 체크(first_check_*)는 메인 체크 전 구간에서 1회 평가하며, hold면 보류(아무 동작 없음).
-#    안전범위: evaluation_minutes 5~120분, first_check_minutes 0~60분, min_profit_pct 0~5%.
-time_stop:
-  enabled: true                 # 타임스톱 전체 on/off
-  evaluation_minutes: 30        # 메인 체크: 진입 후 N분 경과 시 재평가
-  min_profit_pct: 0.01          # 메인 체크 기준 수익(미달 시 action 발동, +1% 미달 → 청산)
-  action: "reduce_50"           # 메인 체크 동작: reduce_50(50% 청산) | exit_all(전량 청산)
-  first_check_minutes: 15       # 1차 체크 시간(분) — 0이면 1차 체크 비활성
-  first_check_action: "hold"    # 1차 체크 동작: hold(보류) | reduce_50 | exit_all
-  first_check_min_profit_pct: 0.0  # 1차 체크 기준 수익(미달 시 first_check_action 발동)
-  flat_box_pct: 0.7           # (구) ±박스 — 호환용·미사용
-  count_as_stoploss: false       # 연속손절 카운터에 산입 X
+# --- 타임스톱: 제거됨 (CLAUDE.md §5.5) ---
+# 시간 기반 매도(일정 시간 방향이 안 나오면 청산)는 시스템에서 완전히 제거되었다.
+# 매도는 오직 익절(TP1/TP2/트레일링)·손절(기술적/하드)·EOD 강제청산(15:20)으로만
+# 발동한다. time_stop 섹션은 더 이상 읽히지 않으며, 어떤 코드도 시간 경과를 이유로
+# 포지션을 청산하지 않는다.
 
 # --- 운영 모드 (단일) ---
 mode_profile:
