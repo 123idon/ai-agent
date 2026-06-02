@@ -39,7 +39,7 @@ signal:
   # 5분봉 진입 타점 (§5.2 개정)
   breakout:
     lookback: 5                   # 직전 고점 산출 윈도우(직전 N봉) — funnel 완화(10→5)
-    volume_mult: 5              # 돌파 캔들 거래량 ≥ 직전 캔들 × 150% — funnel 완화(2.0→1.5)
+    volume_mult: 4              # 돌파 캔들 거래량 ≥ 직전 캔들 × 150% — funnel 완화(2.0→1.5)
   # 일봉 추세 게이트 (전부 충족 시에만 진입, §5.2 개정)
   daily:
     ma_period: 20                 # 일봉 종가 > 20MA
