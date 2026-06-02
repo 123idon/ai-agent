@@ -62,7 +62,7 @@ signal:
   # 자연어로 바꿀 수 있다(StrategyEditor 단일 진입점 → 다음 백테스트/세션부터 반영).
   # 안전범위(editor.TUNE_BOUNDS): 1~4 (분봉 타점은 총 4개) — 범위 밖은 경계로 보정.
   entry_rules:
-    strong_min_indicators: 4      # STRONG 판정 기준(=진입 필요 개수). 4개 전부 충족
+    strong_min_indicators: 2      # STRONG 판정 기준(=진입 필요 개수). 4개 전부 충족
     conditional_min_indicators: 3 # CONDITIONAL 판정 기준. 3개 충족
 
 # --- 진입 (분할 매수) ---
