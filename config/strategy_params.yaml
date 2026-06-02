@@ -81,7 +81,7 @@ entry:
 # --- 익절 룰 (3단 구조, CLAUDE.md §5.3) ---
 take_profit:
   step1:
-    pct_range: [0.03, 0.05]      # +3 ~ +5% (ATR 기반 사전 지정)
+    pct_range: [0.02, 0.03]      # +3 ~ +5% (ATR 기반 사전 지정)
     close_ratio: 0.5             # 50% 청산
   step2:
     pct_range: [0.06, 0.08]      # +6 ~ +8% (ATR 기반 사전 지정)
