@@ -34,6 +34,15 @@ def _params() -> SignalParams:
     )
 
 
+def _empty_chart(code: str) -> dict:
+    """일봉(tf=D) 요청에 빈 응답 — 본 단위테스트는 분봉 타점만 검증(일봉 미확인)."""
+    return {
+        "ok": True, "code": code, "date": "20260529",
+        "prevDate": "20260528", "tf": "D",
+        "candles": [], "prevCount": 0, "todayCount": 0,
+    }
+
+
 def _kis(handler: Callable[[httpx.Request], httpx.Response]) -> KisClient:
     transport = httpx.MockTransport(handler)
     http = httpx.AsyncClient(
@@ -106,6 +115,8 @@ async def test_no_entry_does_not_publish() -> None:
 async def test_publishes_entry_signal_when_triggered() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
+        if body.get("tf") == "D":
+            return httpx.Response(200, json=_empty_chart(body["code"]))
         return httpx.Response(200, json=_signal_chart(body["code"]))
 
     bus = Bus()
@@ -130,6 +141,8 @@ async def test_run_once_isolates_per_symbol_errors() -> None:
         body = json.loads(req.content)
         if body["code"] == "BAD":
             return httpx.Response(200, json={"ok": False, "error": "no data"})
+        if body.get("tf") == "D":
+            return httpx.Response(200, json=_empty_chart(body["code"]))
         return httpx.Response(200, json=_signal_chart(body["code"]))
 
     bus = Bus()

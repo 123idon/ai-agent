@@ -62,6 +62,17 @@ TUNABLE_KEYS = frozenset({
     "signal.volume_surge_multiplier",
     "signal.rsi.entry_zone",                       # [low, high] 인라인 리스트
     "signal.rsi.overbought",
+    # 신호 진입 조건 충족 개수 (§5.2) — 상담에서 "신호 조건 N개로" 변경 가능.
+    "signal.entry_rules.strong_min_indicators",    # STRONG 판정 기준(=진입 필요 개수)
+    "signal.entry_rules.conditional_min_indicators",  # CONDITIONAL 판정 기준
+    # 5분봉 돌파 타점 (§5.2) — 실제 매매에 쓰이는 거래량 배수/룩백.
+    "signal.breakout.volume_mult",
+    "signal.breakout.lookback",
+    # 포지션 사이징 (§25.3) — 진입 비중/신용 배수.
+    "entry.sizing.cash_fraction_strong",
+    "entry.sizing.cash_fraction_conditional",
+    "entry.sizing.credit_multiplier",
+    "entry.conditional_cap_pct",
     # 손절 (§5.4) — 상담/회의에서 조정 가능
     "stop_loss.hard_max_pct",
     "stop_loss.technical_stop_enabled",
@@ -72,15 +83,7 @@ TUNABLE_KEYS = frozenset({
     "take_profit.step2.pct_range",                 # 인라인 리스트
     "take_profit.step2.close_ratio",
     "take_profit.step3_trailing.trail_from_high_pct",
-    # 타임스톱 (§5.5 2단 체크) — 상담/회의에서 조정 가능
-    "time_stop.enabled",
-    "time_stop.evaluation_minutes",
-    "time_stop.min_profit_pct",
-    "time_stop.action",
-    "time_stop.first_check_minutes",
-    "time_stop.first_check_action",
-    "time_stop.first_check_min_profit_pct",
-    "time_stop.flat_box_pct",
+    # 타임스톱(시간 기반 매도)은 제거되었다(§5.5) — 조정 가능한 time_stop 키 없음.
 })
 
 # 인라인 리스트(leaf) 값을 허용하는 키 — set_yaml_leaf가 [a, b] 형태로 교체한다.
@@ -414,29 +417,7 @@ class OptimizerAgent:
                         },
                     ))
 
-        # 규칙 B: 타임스톱 청산 비중 과다 → 평가 시간 단축 제안
-        timestop = next(
-            (s for s in report.conditions.by_exit_kind if s.key == "time_stop"), None,
-        )
-        if timestop is not None and perf.trades > 0:
-            ratio = timestop.trades / perf.trades
-            if ratio >= 0.4:
-                cur = self._current_value("time_stop.evaluation_minutes")
-                if cur is not None and int(cur) > 15:
-                    new = max(15, int(cur) - 5)
-                    out.append(self._make_proposal(
-                        kind="strategy",
-                        rationale=(
-                            f"타임스톱 청산 비중 {ratio:.0%} — 방향성 미발생 종목을 "
-                            "더 빨리 정리하도록 평가 주기 단축."
-                        ),
-                        changes=(ParamChange(
-                            key="time_stop.evaluation_minutes",
-                            from_value=cur, to_value=new,
-                            reason="타임스톱 과다 — 평가 시간 단축",
-                        ),),
-                        evidence={"time_stop_ratio": ratio, "trades": perf.trades},
-                    ))
+        # (규칙 B 타임스톱 과다 제안은 제거됨 — 타임스톱 자체가 폐지되어 더는 발생하지 않는다.)
         return out
 
     def _token_proposals(

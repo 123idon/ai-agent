@@ -82,7 +82,7 @@ def test_backtest_records_trade_on_signal() -> None:
     analyzer = SignalAnalyzer(_params())
     engine = BacktestEngine(
         analyzer,
-        BacktestParams(warmup_bars=60, time_stop_bars=3, tp1_pct=0.04),
+        BacktestParams(warmup_bars=60, tp1_pct=0.04),
     )
     result = engine.run(_bull_then_pullback())
     assert len(result.trades) >= 1

@@ -241,11 +241,13 @@ class MacroIndex(BaseModel):
 
 
 class MarketDataResponse(BaseModel):
+    # 필드 누락/에러 바디여도 검증 예외로 백테스트를 죽이지 않도록 모두 기본값을 둔다.
+    # (traidair가 과거 시각 처리 실패 시 빈 구조를 반환해도 빈 indices=GREEN로 폴백)
     model_config = ConfigDict(extra="ignore")
 
-    mode: str
-    indices: dict[str, MacroIndex]
-    fetchedAt: str
+    mode: str = "realtime"
+    indices: dict[str, MacroIndex] = {}
+    fetchedAt: str = ""
     cutoffKST: str | None = None
 
 

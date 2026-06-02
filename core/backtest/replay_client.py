@@ -556,17 +556,24 @@ class ReplayKisClient:
                 cutoffKST=sim_time,
             )
 
-    async def _basket_macro_proxy(self) -> MacroIndex | None:
-        """지수 분봉이 없을 때 유니버스 구성종목 바스켓 평균 등락률을 KOSPI 프록시로 산출.
+    # 바스켓→지수 베타 감쇠: 거래대금 상위(고베타 대형주) 바스켓은 실제 KOSPI 지수보다
+    # 변동을 과장한다(예: 지수 -0.5%인데 바스켓 -1.5%). 등급 임계(YELLOW -0.8%/RED -1.5%)는
+    # 실제 지수 기준이므로, 바스켓 등락률에 베타 계수를 곱해 지수 수준으로 낮춘다.
+    _BASKET_BETA = 0.65
 
-        전일 거래대금 상위(=KOSPI200/KOSDAQ150 대형주 중심, get_volume_rank 세션 캐시)
-        종목들의 **컷오프 분봉** 기준 (당일 현재가 vs 전일 종가) 등락률 평균을 시장 등락률로
-        본다. 컷오프(≤ 가상 시각) 분봉만 쓰므로 룩어헤드가 없다(§17). 등락률만 등급 판정에
-        쓰이므로(MarketWatchAgent._grade) price/prev 는 등락률을 보존하는 합성 지수값으로 둔다.
-        표본이 없으면 None(→ 빈 지수 = GREEN, §19 무거래 자가정지 방지와 일관).
+    async def _basket_macro_proxy(self) -> MacroIndex | None:
+        """지수 분봉이 없을 때 유니버스 구성종목 바스켓으로 KOSPI 프록시 등락률을 산출.
+
+        전일 거래대금 상위(KOSPI200/KOSDAQ150 대형주 중심, get_volume_rank 세션 캐시)
+        종목들의 **컷오프 분봉** 기준 (당일 현재가 vs 전일 종가) 등락률을 모아 **중앙값**
+        (이상치에 강건)을 취하고, **베타 감쇠(`_BASKET_BETA`)**로 고베타 과장을 지수 수준으로
+        낮춘다 — top-40 단순평균은 그날 큰 변동 종목(거래대금 상위=대형 무버)에 끌려 시장을
+        실제보다 약세(RED 과다)로 읽어 진입을 과차단했다(§21 부작용 수정). 컷오프 분봉만
+        쓰므로 룩어헤드 없음(§17). 등락률만 등급 판정에 쓰여 price/prev 는 합성값.
+        표본 없으면 None(→ 빈 지수 = GREEN, §19 무거래 자가정지 방지와 일관).
         """
         try:
-            uni = await self.get_volume_rank(top_n=40)
+            uni = await self.get_volume_rank(top_n=60)
         except Exception:  # noqa: BLE001
             return None
         chgs: list[float] = []
@@ -589,10 +596,13 @@ class ReplayKisClient:
             chgs.append((price - prev_close) / prev_close * 100.0)
         if not chgs:
             return None
-        avg = sum(chgs) / len(chgs)
+        chgs.sort()
+        n = len(chgs)
+        median = chgs[n // 2] if n % 2 else (chgs[n // 2 - 1] + chgs[n // 2]) / 2.0
+        chg = median * self._BASKET_BETA   # 고베타 바스켓 → 지수 수준 감쇠
         # 합성 지수: prev=1000 기준, 등락률을 그대로 반영(등급 판정은 chgPct 만 사용).
         prev = 1000.0
-        return MacroIndex(price=round(prev * (1 + avg / 100.0), 2), prev=prev, chgPct=round(avg, 2))
+        return MacroIndex(price=round(prev * (1 + chg / 100.0), 2), prev=prev, chgPct=round(chg, 2))
 
     # ─────────────────────────── DART ───────────────────────────
 

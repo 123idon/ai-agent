@@ -15,3 +15,5 @@ class Topic(str, Enum):
     ORDER_FAILED = "order.failed"
     CEO_COMMAND = "ceo.command"
     LEARNING_PROPOSAL = "learning.proposal"
+    META_OBSERVATION = "meta.observation"
+    META_CLAUDE_CALL = "meta.claude_call"

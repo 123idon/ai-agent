@@ -66,6 +66,12 @@
   - 업종/테마 모멘텀(상위 5개 테마 가산): 15점
   - 변동성 ATR(20) 적정 범위: 20점
   - 공시·뉴스 페널티(악재/관리종목/거래정지 이력): -20점 (필터)
+- **섹터 강도 가산점(B안, §27)**: 위 100점에 더해 **종목이 속한 섹터의 전일 등락률·대장주
+  가산점**을 합산한다(가점 보정, 종목 선정 정확도 향상). 학습부(`agents/learning/sector/`)가
+  보유 분봉에서 **전일 종가 기준** 섹터 데이터를 추출하면, 스크리닝이 종목 선정 전에
+  날짜만 넘겨 자동 호출한다. 등락률 `+2%↑→+5` / `+1~2%→+3` / `-1~+1%→0` / `-1%↓→-2`,
+  섹터 대장주(거래대금 top5)면 `+2`. 섹터 데이터/매핑이 없으면 가산점 0(기존 점수 그대로).
+  최종 점수로 70점 임계 판정. 상세는 §27.
 - **출력**: `data/screening/{YYYYMMDD}.json`
 
 #### 2.2.2 시장상황 에이전트 (`agents/intel/market_watch/`)
@@ -209,12 +215,12 @@
 
 진입 메시지에는 **진입 캔들 저점**을 함께 기록하며, 해당 값은 §5.4의 기술적 손절 기준이 된다.
 
-### 5.3 익절 룰 (3단 구조, 최소 목표 상향 — §24.x 개정)
-- **1차 +3~5%**: 보유 수량의 **40% 청산**
+### 5.3 익절 룰 (3단 구조)
+- **1차 +3~5%**: 보유 수량의 **50% 청산**
   - 진입 시 기대 변동성(ATR)에 따라 +3% / +4% / +5% 중 1단계 목표가를 분석부가 사전 지정
-- **2차 +6~10%**: 잔여의 **40% 청산**
-  - 마찬가지로 ATR에 따라 +6 ~ +10% 중 사전 지정(상단을 +8%→+10%로 확대)
-- **3차 트레일링**: 잔여 보유분에 대해 **고점 대비 -2% 이탈 시 전량 청산**(기존 -1.5%에서 완화)
+- **2차 +6~8%**: 잔여의 **30% 청산**
+  - 마찬가지로 ATR에 따라 +6 ~ +8% 중 사전 지정
+- **3차 트레일링**: 잔여 보유분에 대해 **고점 대비 -1.5% 이탈 시 전량 청산**
   - 트레일링은 분봉 종가 기준, 장 마감 15:20까지 유효 → **15:20 EOD 강제청산으로 전량 일괄 청산**(예외 없음, §5.7)
 
 ### 5.4 손절 룰 (기술적 우선, §24.x 개정)
@@ -226,13 +232,27 @@
       만에 청산되는 문제가 있어, 진입 후 유예 시간 동안은 신호붕괴 청산을 보류한다(§5.6
       평균 보유 30분~3시간 보장). **하드 손절·기술적 손절(진입캔들 저점 이탈)·EOD는
       유예와 무관하게 항상 발동**하므로 실질 위험은 그대로 차단된다.
-- **하드 손절**: **최대 -2%** (기존 -3%에서 축소, 기술적 트리거가 늦게 잡힐 때의 안전 하한)
+- **하드 손절**: **최대 -3%** (기술적 트리거가 늦게 잡힐 때의 안전 하한)
 - 두 조건 중 **먼저 도달한 쪽**으로 청산
+- **전 파라미터는 `config/strategy_params.yaml`의 `stop_loss`에서만 읽는다(코드 하드코딩 없음)**:
+  `technical_stop_enabled`(기술적 손절 on/off)·`technical_buffer_pct`(저점 이탈 버퍼)·
+  `hard_max_pct`(최대 손절). 상담(💬)·회의(🤝)에서 자연어로 변경 가능하며(§24, "손절을
+  -3%로", "기술적 손절 꺼줘"), `StrategyEditor` 단일 진입점(화이트리스트→leaf 교체→재읽기
+  검증→git 커밋→ImprovementLog)을 거쳐 다음 세션부터 반영된다. **안전범위(가드레일,
+  `core/strategy/editor.py`)**: `hard_max_pct` -0.5%~-10%, `technical_buffer_pct` 0~5% —
+  범위 밖 요청은 가장 가까운 경계로 자동 보정(거부 아님).
 
-### 5.5 타임스톱 (§24.x 개정)
-- 진입 후 **30분** 경과 시 보유 포지션 재평가
-  - **수익 +1% 미달 시 보유 수량 50% 청산**(기준 상향 — 30분 내 +1%도 못 내면 자금 회전)
-- 타임스톱 트리거는 손절 카운터(HL-02)에는 산입하지 않는다(중립 청산).
+### 5.5 타임스톱 — 제거됨 (시간 기반 매도 금지)
+> **타임스톱(일정 시간 안에 방향/수익이 안 나오면 청산)은 시스템에서 완전히 제거되었다.**
+> 시간 경과를 이유로 파는 청산은 **어떤 코드 경로에도 존재하지 않는다**. 매도는 오직
+> 다음 세 가지로만 발동한다: **익절(§5.3 TP1/TP2/트레일링)**, **손절(§5.4 기술적/하드 -3%)**,
+> **EOD 강제청산(§5.7, 15:20 전량)**.
+- `strategy_params.yaml`에 `time_stop` 섹션이 없으며, `ExitParams`/`evaluate_exit`에 시간
+  기반 청산 분기가 없다. `ExitKind`에 `TIME_STOP`/`TIME_STOP_FIRST` 종류도 없다.
+- 상담(💬)·회의(🤝)·노션(§23)·메타부(§2.7) 어느 경로로도 타임스톱을 되살릴 수 없다
+  (`TUNABLE_KEYS`·파서·HTS 설정 UI에서 `time_stop.*` 키가 모두 제거됨).
+- 평균 보유 시간(§5.6 30분~3시간)은 익절/손절 타점이 자연히 결정하며, 강제 시간 청산은
+  없다.
 
 ### 5.6 운영 모드
 - **데이트레이딩 단일**: 평균 보유 30분~3시간
@@ -246,9 +266,9 @@
 - **무보유일 때만 신규 진입(단일 집중)**: 보유 포지션이 하나라도 있으면 신규 진입을 하지 않는다. 특정 종목에 고정되지 않고, **진입 시점마다** 실시간 시황·강세 섹터·후보 점수를 다시 평가해 그 시점의 **최강 1종목**만 진입한다.
   - "강세 섹터"는 당일 후보군의 테마별 점수 합으로 산출한 상위 테마를 말하며, 동점 시 스크리닝 점수가 높은 종목을 택한다.
   - 진입 자체는 기존 게이트를 그대로 통과한다: 분석부 5지표(§5.2) → 리스크부 사이징 + HardLimitGate(HL-01~06) → 실행부.
-- **보유 중에는 실시간 포지션 매니저가 청산만 수행**한다. 청산 규칙은 §5.3(익절 3단)·§5.4(기술적/하드 손절)·§5.5(타임스톱)·트레일링·**EOD 강제청산(15:20, 어떤 조건에서도 예외 없이 보유분 전량 시장가 청산 → 다음 거래일 이월 금지)**를 그대로 따른다. EOD 강제청산은 백테스트·실거래에 동일하게 적용된다.
+- **보유 중에는 실시간 포지션 매니저가 청산만 수행**한다. 청산 규칙은 §5.3(익절 3단)·§5.4(기술적/하드 손절)·트레일링·**EOD 강제청산(15:20, 어떤 조건에서도 예외 없이 보유분 전량 시장가 청산 → 다음 거래일 이월 금지)**를 그대로 따른다(타임스톱은 §5.5 대로 제거됨 — 시간 기반 매도 없음). EOD 강제청산은 백테스트·실거래에 동일하게 적용된다.
   - 보호 청산(손절·EOD 강제)은 "무조건 청산"(§5.4) 원칙에 따라 시장가로 즉시 송신하며 진입 게이트(HL-01/03/04/02)와 무관하게 항상 허용된다.
-  - 손절류 청산은 연속손절 카운터(HL-02)에 산입, 익절류는 카운터 리셋, 타임스톱은 미산입(§5.5).
+  - 손절류 청산은 연속손절 카운터(HL-02)에 산입, 익절류는 카운터 리셋, EOD는 미산입.
 - **청산되어 무보유로 복귀하면** 다시 관찰 → 최강 1종목 선택 → 진입을 반복한다.
 
 ---
@@ -567,7 +587,7 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 
 ### 16.4 백테스트 엔진 (`agents/learning/pattern/backtest.py`)
 - `BacktestEngine(analyzer, params)` — walk-forward 분봉 시뮬레이션
-- `BacktestParams`: 워밍업 60, position 30%, TP1 +4%/50%, TP2 +7%/30%, 트레일링 -1.5%, 하드 -3%, 타임스톱 30봉, 진입 캔들 저점 기술 손절
+- `BacktestParams`: 워밍업 60, position 30%, TP1 +4%/50%, TP2 +7%/30%, 트레일링 -1.5%, 하드 -3%, 진입 캔들 저점 기술 손절 (타임스톱 없음 — 시간 기반 매도 제거 §5.5)
 - `BacktestResult`: trades, 총 PnL, 승률, MDD, Sharpe
 - `PatternAnalysisAgent.backtest(candles)`로 외부 노출 (paper 전용).
 
@@ -578,7 +598,7 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 
 ### 16.7 단일 집중 + 실시간 청산 루프 (§5.7)
 - `agents/execution/selector.py` — `EntrySelector`. `is_flat(balance)`(보유 0일 때만 진입), `pick(candidates)`(후보 테마별 점수 합으로 강세 섹터 산출 → 강세테마 소속·점수순 최강 1종목).
-- `agents/execution/position_manager/exit_rules.py` — `ExitParams.from_file()`(strategy_params.yaml의 take_profit/stop_loss/time_stop **읽기 전용**), `LivePositionState`, `evaluate_exit(state, price, now, breakdown_count)` → `ExitAction(kind, ratio, reason)`. 우선순위: **EOD 강제청산(15:20, 무조건 전량·최우선)** → 하드 -3% → 기술적(진입캔들 저점 이탈) → 트레일링(고점 -1.5%, TP1 후) → TP1 → TP2 → 타임스톱(30분, ±0.5%) → HOLD. EOD는 우회 플래그가 없으며 백테스트·실거래 동일 적용(이월 금지).
+- `agents/execution/position_manager/exit_rules.py` — `ExitParams.from_file()`(strategy_params.yaml의 take_profit/stop_loss **읽기 전용**), `LivePositionState`, `evaluate_exit(state, price, now, breakdown_count)` → `ExitAction(kind, ratio, reason)`. 우선순위: **EOD 강제청산(15:20, 무조건 전량·최우선)** → 하드 -3% → 기술적(진입캔들 저점 이탈) → 트레일링(고점 -1.5%, TP1 후) → TP1 → TP2 → HOLD. **타임스톱(시간 기반 매도)은 제거됨(§5.5)** — 시간 경과로 파는 분기 없음. EOD는 우회 플래그가 없으며 백테스트·실거래 동일 적용(이월 금지).
   - **익절 목표가 ATR 동적화(§5.3)**: 분석부가 진입 시 `atr_pct`(ATR/현재가)를 `EntrySignal`에 실어 보내고, `select_tp_targets(atr_pct, params)`가 `pct_range` 안에서 밴딩 선택 → 저변동성 +3%/+6%, 중 +4%/+7%, 고 +5%/+8%. `PositionManagerAgent`가 등록 시 `LivePositionState.tp1_target/tp2_target`에 사전 지정. ATR% 미상이면 범위 하단 폴백. ATR은 `core/indicators/volatility.py`(`atr`/`atr_pct`).
 - `agents/execution/position_manager/main.py` — `PositionManagerAgent`. `order.event`(매수) 구독 → `LivePositionState` 등록. `monitor_once()`: 잔고 권위 확인 → 1분봉 재평가(신호붕괴 카운트) → `evaluate_exit` → 시장가 매도(게이트 우회) + `signal.exit` 발행 + `StopLossTracker` 갱신. `run_forever(stop_event)` 20초 폴링.
 - `scripts/run_paper.py`: 공유 `StopLossTracker`를 HardLimitGate·PositionManager에 주입, 진입은 `EntrySelector` 게이트(무보유 시 최강 1종목)로만, `position_loop` 백그라운드 추가. `run_live.py`는 `_run` 공유로 자동 반영.
@@ -651,7 +671,8 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
   핀치)으로 간격을 조절하며, ⊙은 기본 간격으로 리셋한다.
 
 ### 17.7 traidair에서 직접 제어 + 결과 리포트
-- **제어 버튼**(🎬 백테스트 탭): server.js가 `POST /api/backtest/{start,stop,reset}`로 `run_backtest.py` 자식 프로세스를 spawn/kill한다. 시작 시 `BACKTEST_START/END/CASH/DAYS`를 env로 주입(가상잔고 기본 100만, 직접 입력·리셋 가능), 날짜 범위 선택 가능. `reset`은 실행 중지 + `state/backtest_live.json` 삭제.
+- **제어 버튼**(🎬 백테스트 탭): server.js가 `POST /api/backtest/{start,toggle,halt,stop,reset}`로 `run_backtest.py` 자식 프로세스를 spawn/kill한다. 시작 시 `BACKTEST_START/END/CASH/DAYS`를 env로 주입(가상잔고 기본 100만, 직접 입력·리셋 가능), 날짜 범위 선택 가능.
+- **3버튼 분리 제어(시작/일시정지/정지)**: HTS 백테스트 다이얼로그는 상태머신 기반 3버튼으로 분리된다 — **idle**(▶ 시작만 활성) / **running**(⏸ 일시정지·⏹ 정지 활성) / **paused**(▶ 재개·⏹ 정지 활성). `▶ 시작`=새 백테스트, `⏸ 일시정지`=`BACKTEST_PAUSE` 센티넬로 현재 위치에서 멈춤(상태 유지·재개 가능, 엔진 생존), `⏹ 정지`=`/api/backtest/halt`(graceful 종료 + **상태파일 보존**)로 프로세스만 완전 종료하고 진행을 idle로 초기화하되 **잔고/누적성과는 유지**하고 결과 리포트를 표시한다(다음 ▶ 시작은 새 백테스트로 출발). **정지(⏹)와 리셋(↻)의 구분**: `halt`/`stop`은 프로세스만 멈추고 `halt`는 상태파일을 남겨 잔고·성과·리포트를 보존하는 반면, `reset`은 실행 중지 후 `state/backtest_live.json`을 삭제해 모든 것을 초기화한다(다음 시작 가상잔고 100만·보유 0). `stop`은 상태파일까지 삭제하는 graceful 정지(고아 정리·재시작용 내부 경로).
 - **완료 리포트**(`state.report`): 총수익률·승률·손익비·**MDD**(일별 자산곡선 고점대비 최대하락), **날짜별 손익 차트**(`dailyPnl`), **최고/최악 패턴**(메모리 §19), **메타 개선 제안**(`learning.proposal`). running=false·days>0일 때 토스 스타일 카드로 표시.
 
 ---
@@ -702,8 +723,8 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 | 영역 | 모듈 | 주요 객체 |
 |---|---|---|
 | 장기 메모리 | `core/memory/` | `MemoryStore`(저널 rebuild·영속), `MemoryView`(`symbol_score_adjust`/`pattern_confidence`/`grade_winrate`/`best·worst_pattern`) |
-| 백테스트 제어 | `traidair/server.js` | `/api/backtest/{start,stop,reset}` (python spawn/kill, 기본 가상잔고 100만·`BACKTEST_AUTO_SPEED=1`), `backtest-live.html` 컨트롤 바·리포트 |
-| 백테스트 HTS 연동 | `traidair/trading-hts.html` | ▶ 백테스트 버튼→`agentBTStart`(run_backtest.py), `/api/backtest/state` 1초 폴링→하단 푸터(평가손익·수익률·매매횟수)·진행 패널·캔들 매수(▲)/매도(▼) 마커(`_drawAgentMarkers`)·완료 리포트 |
+| 백테스트 제어 | `traidair/server.js` | `/api/backtest/{start,toggle,halt,stop,reset}` (python spawn/kill, 기본 가상잔고 100만·`BACKTEST_AUTO_SPEED=1`), `halt`=상태파일 보존 완전중단(정지⏹)·`reset`=상태파일 삭제 초기화(↻), `backtest-live.html` 컨트롤 바·리포트 |
+| 백테스트 HTS 연동 | `traidair/trading-hts.html` | 3버튼 분리 제어 `agentBTStartBtn`(▶ 시작)/`agentBTPauseBtn`(⏸ 일시정지·▶ 재개)/`agentBTHaltBtn`(⏹ 정지=`/api/backtest/halt`, 잔고·성과 유지+리포트), 상태머신 동기화 `_syncBtToggleBtn`(idle/running/paused), `/api/backtest/state` 1초 폴링→하단 푸터(평가손익·수익률·매매횟수)·진행 패널·캔들 매수(▲)/매도(▼) 마커(`_drawAgentMarkers`)·완료 리포트. 레거시 단일 토글 `agentBTToggle`/`agentBTStop`은 코드 보존(미연결) |
 | 자동 배속 | `core/backtest/runner.py`, `scripts/run_backtest.py` | `BacktestRunner(pacer=…)` 훅 + `AutoSpeedGovernor`(psutil CPU 부하 기반, 임계 88% 초과 시 미세 감속, 한가하면 최고속) |
 | 메타 진화 실행 | `scripts/run_evolve.py`, `traidair/server.js` | 🧬 진화+ 버튼→`/api/backtest/evolve`(run_evolve.py spawn)→`OptimizerAgent.observe/propose`(기본 **자동적용 안 함**, `EVOLVE_APPLY=1`만 일괄적용), `/api/backtest/evolve-result`로 제안 서빙 |
 | 제안 개별 적용+검수 | `scripts/apply_proposal.py`, `traidair/server.js` | 제안 카드 **✅ 적용** 버튼→`/api/backtest/apply-proposal`(POST `{id}`)→`apply_proposal.py` spawn: ①`apply_proposal_to_file` 수정 ②재읽기 yaml 검증 ③`git commit`. **paper 한정**(live=`locked`), 화이트리스트 외/검증 실패 시 구체 사유 반환. stdout UTF-8 강제 |
@@ -824,7 +845,14 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
   ④ 재읽기 검증 → ⑤ git 자동 커밋 → ⑥ `ImprovementLog` 영구 기록.
 - 변경 전후 값을 `display`("RSI 진입 구간: [50, 65] → [55, 65]로 변경됨")로 돌려준다.
 - `TUNABLE_KEYS` 확장: RSI 구간·과매수, 거래량 배수, 스크리닝 임계, 하드 손절, 익절
-  1·2차 범위/비율, 트레일링, 타임스톱. 하드리밋 파일은 절대 제외.
+  1·2차 범위/비율, 트레일링, **신호 진입 조건 충족 개수(`signal.entry_rules.strong_min_indicators`/
+  `conditional_min_indicators`, §5.2)**, **5분봉 돌파 거래량 배수/룩백(`signal.breakout.*`)**,
+  **포지션 사이징 비중(`entry.sizing.*`, §25.3)**. 상담(💬)·회의(🤝)에서 자연어로 변경 가능
+  (예: "신호 조건 4개로", "진입 비중 80%로", "돌파 거래량 2.5배로"). 안전범위(`editor.TUNE_BOUNDS`):
+  진입 조건 개수 1~4, 비중 0.1~1.0, 신용 배수 1.0~2.5 — 범위 밖은 경계로 보정. 하드리밋(§4:
+  동시 보유 종목 수·연속 손절 쿨다운·진입 금지 시간·슬리피지·담보비율) 파일은 절대 제외이며,
+  그 변경 요청은 `detect_hard_limit_request`가 명확한 거부 사유(HL-01~06)로 안내한다.
+  **타임스톱 키는 제거됨(§5.5).**
 
 ### 24.2 상담 → 즉시 반영 (`scripts/consult_apply.py`)
 - `--text "RSI 기준 55~65로"` : 규칙 기반 파서(`core/consult/parser.py`, LLM 미사용
@@ -837,7 +865,7 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 ### 24.3 복기 → 학습 → 자동 반영 (`scripts/auto_learn.py`, `core/learning/review.py`)
 - `ReviewLearner.analyze(journal)`가 반복 손실 패턴을 코드화한 개선안 생성:
   - **손절 N회 연속** → 진입 RSI 하단 +5(질 강화)
-  - **타임스톱 청산 과다(≥40%)** → 평가 주기 −5분(자금 회전)
+  - (타임스톱 과다 규칙은 제거됨 — 시간 기반 매도 폐지 §5.5)
 - paper에서 `StrategyEditor`로 자동 반영 + `ImprovementLog` 기록. `--dry-run`은 추출만.
 - 변경 전후 성과 비교(`evaluate_effects`) → **효과 없는 변경은 롤백 후보**(`rollback_candidates`).
 - 결과는 `state/learn_result.json`(HTS "최근 적용된 변경사항"·타임라인·롤백 제안).
@@ -875,6 +903,53 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 > 나선 방지를 모두 보존한다. live에서는 어떤 경로(상담·복기·노션)도 파라미터를 바꾸지
 > 못하며, 화이트리스트 밖/하드리밋 키는 추출·적용 단계에서 거부된다.
 
+### 24.7 회의 내용 적용 (🤝 회의/💬 상담 → 📋 체크리스트 선택 적용)
+
+> 전체 팀 회의·1:1 상담이 끝나면 대화에서 **실행 가능한 전략 변경을 자동 추출**해
+> 체크리스트로 보여주고, 운영자가 선택한 항목만 ``strategy_params.yaml`` 에 실제 반영한다.
+> 적용은 §24.1 ``StrategyEditor`` 단일 진입점을 그대로 거치므로(화이트리스트→leaf 교체→
+> 재읽기 검증→git 커밋→ImprovementLog) 하드리밋·잠금·죽음의 나선 가드가 모두 보존된다.
+> 회의 단위 결정은 ``data/memory/meeting_decisions.json`` 에 누적되어 이력·효과·롤백을 제공한다.
+
+- **추출**(읽기전용): 회의 레코드의 구조화 개선안(``[[PARAM]]`` → ``improvements``) +
+  자유 대화(``extract_changes``)를 병합해 항목별 ``{현재값→제안값, 적용가능, 하드리밋잠금,
+  실전잠금, 동일값}`` 체크리스트를 만든다. 하드리밋(§4) 키·화이트리스트(§13) 밖 키는
+  ``applicable:false`` + 🔒 표시, live 모드는 전 항목 잠금.
+- **적용**: 선택 항목을 ``StrategyEditor`` 로 반영(paper 전용) → ``MeetingDecisionLog`` 에
+  회의 맥락(언제·어느 회의·안건)과 함께 기록 + git 커밋. 적용 전후 값을 ``display`` 로 표시.
+- **이력/롤백**(요구 5): ``meeting_decisions.json`` 타임라인 + ``ImprovementLog`` 효과 verdict
+  연결(``improvement_id``) → 효과 악화(worse) 변경은 롤백 후보. 롤백은 ``to→from`` 원복(paper).
+
+| 영역 | 모듈 | 주요 객체 |
+|---|---|---|
+| 회의 결정 로그 | `core/memory/meeting_decisions.py` | `MeetingDecisionLog`(record/timeline/find/mark_rolled_back), `MeetingDecision` |
+| 회의 적용 백엔드 | `scripts/meeting_apply.py` | `--action {extract,apply,history,rollback}`, `action_extract/apply/history/rollback`, `coerce_value` |
+| 통합 API(서버) | `traidair/server.js` | `/api/agent/consult/meeting/{extract,apply,history,rollback}`(meeting_apply.py spawn, stdin 페이로드) |
+| 회의 적용 UI | `traidair/trading-hts.html` | `consMeetingApplyButton/Open/RenderChecklist/ApplySelected`(📋 체크리스트), `consMeetingHistoryLoad/Rollback`(🗳 이력 패널) |
+| 테스트 | `tests/unit/test_meeting_apply.py` | coercion·결정로그·추출(적용가능/하드리밋/실전/동일값)·적용·롤백·모드잠금 |
+
+### 24.8 HTS ⚙️ 매매 설정 패널 (손절/익절 직접 설정 + 자동 저장)
+
+> 운영자가 HTS **📋 기능 탭의 "⚙️ 매매 설정"** 섹션에서 손절·익절 수치를 직접
+> 조절하면 **값 변경 즉시** ``strategy_params.yaml`` 에 저장되고 git 자동 커밋된다(저장 버튼
+> 없음, "✓ 저장됨 · 커밋 xxx" 표시). 새로고침/서버 재시작해도 항상 yaml 현재값을 읽어 표시하며,
+> 다음 백테스트/매매부터 즉시 반영된다(``ExitParams.from_file``). 모든 저장은 §24.1
+> ``StrategyEditor`` 단일 진입점을 그대로 거쳐(화이트리스트→leaf 교체→재읽기 검증→git 커밋→
+> ImprovementLog) 하드리밋·잠금·죽음의 나선 가드가 보존된다. **자체 백엔드를 만들지 않고
+> 기존 ``consult_apply.py`` 적용 경로를 재사용**한다.
+> - **안전장치**: 항목별 안전범위 밖 입력은 클라이언트가 거부+경고(서버도 가까운 경계로 클램프
+>   backstop, §19). 하드리밋(`hard_limits.yaml`)·화이트리스트(`TUNABLE_KEYS`) 밖 키는 애초에
+>   패널에 노출하지 않으며, 보내져도 서버가 거부. **live 모드면 전 항목 잠금**(🔒 배너).
+> - 노출 항목: `stop_loss.{hard_max_pct,technical_stop_enabled,technical_buffer_pct}` ·
+>   `take_profit.{step1,step2}.{pct_range,close_ratio}` · `take_profit.step3_trailing.trail_from_high_pct`.
+>   **타임스톱(`time_stop.*`)은 제거되어 패널에 노출하지 않는다(§5.5).**
+
+| 영역 | 모듈 | 주요 객체 |
+|---|---|---|
+| 설정 현재값/범위 조회 | `scripts/strategy_settings.py` | `--get` → yaml 현재값 + `TUNE_BOUNDS_SCALAR/LIST` 가드레일 + 모드(잠금) JSON (읽기 전용, stdout UTF-8) |
+| 조회 API(서버) | `traidair/server.js` | `GET /api/agent/strategy/settings`(strategy_settings.py spawn). 저장은 기존 `POST /api/agent/consult/apply-param`(consult_apply.py) 재사용 |
+| 설정 UI | `traidair/trading-hts.html` | 📋 기능 탭 `#tradeSettingsPanel` · `tradeSettingsLoad/Render`·`tsSave{Num,Range,Toggle,Choice}`·`_tsBounds`(거부+경고)·`_tsToDisp/_tsToYaml`(% ↔ 소수 변환)·`.ts-*` CSS(토스 스타일 토글/입력) |
+
 ---
 
 ## 25. 일봉+분봉 복합 전략 + 친화 사유 (1% 미만 손익 반복 문제 개선)
@@ -895,10 +970,10 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 - 일봉 캔들은 `SignalAgent._daily_candles`가 `kis.get_daily_chart`(live=traidair tf="D",
   backtest=`ReplayKisClient`가 `CandleStore` 분봉을 일봉으로 집계, 룩어헤드 없음)로 best-effort 조회.
 
-### 25.2 익절/손절/타임스톱 (`exit_rules.py`, `strategy_params.yaml`)
-- 익절: 1차 +3~5% **40%** · 2차 +6~**10%** **40%** · 트레일링 고점 대비 **-2%** 잔량 전량(§5.3).
-- 손절: 기술적 = 진입 캔들 저점 **-0.5%** 이탈 · 하드 **-2%**(기존 -3%)(§5.4).
-- 타임스톱: 30분 내 **+1% 미달** 시 50% 청산(§5.5).
+### 25.2 익절/손절 (`exit_rules.py`, `strategy_params.yaml`)
+- 익절: 1차 +3~5% **50%** · 2차 +6~**8%** **30%** · 트레일링 고점 대비 **-1.5%** 잔량 전량(§5.3).
+- 손절: 기술적 = 진입 캔들 저점 **-0.5%** 이탈 · 하드 **-3%**(§5.4).
+- 타임스톱: **제거됨** — 시간 경과를 이유로 파는 청산은 없다(§5.5).
 
 ### 25.3 포지션 사이징 (`agents/risk/risk_manager/main.py`)
 - 일봉 추세 강할수록 비중 ↑: **STRONG + 일봉 강세 → 가용현금 × 2 × 0.7** / CONDITIONAL → × 2 × 0.4.
@@ -908,8 +983,8 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 ### 25.4 매매 사유 친화 변환 (`exit_rules.friendly_exit_reason`)
 - 모든 청산 사유를 쉬운 한국어 + 손익률로 표기. 예:
   - `technical_stop` → "📉 진입할 때 저점 밑으로 떨어져서 손절했어요 (-1.11%)"
-  - `time_stop` → "⏱ 30분 기다렸는데 방향이 안 나와서 절반 팔았어요 (-0.47%)"
   - TP1/TP2 → "✅ 1·2차 목표가 도달! …익절했어요", EOD → "🔔 장 마감이라…", 트레일링 → "📈 고점에서 밀려서…".
+  - (타임스톱 사유는 제거됨 — 시간 기반 매도 폐지 §5.5)
 - 진입 사유도 `indicators._compose_reason`이 친화 문장으로 생성("🚀 일봉 추세 양호 + 분봉 타점
   4/4 충족 → 강하게 진입", "⛔ 진입 안 함 — …"). `PositionManagerAgent`가 `ExitEvent.reason`에
   친화 사유를 실어 대시보드(`todayTrades`)·저널에 노출한다.
@@ -985,6 +1060,57 @@ JournalAgent                         [모든 토픽 구독 → data/journal/{YYY
 | 다일 진단 로그 | `core/backtest/runner.py` | `run_forever`(N일차 시작/종료 사유·다음 날짜·전체 진행 N/M·루프 종료 사유), `_pool_brief`(데이터 보유 풀 요약) |
 | 런처 단일화 | `start.bat` | 메뉴 1 = traidair 보장 + `/hts` 브라우저 열기(직접 `run_paper.py` 실행 제거) |
 | 단일 실행 회귀 테스트 | `tests/unit/test_backtest_singleton_lock.py` | 동시 기동 시 정확히 1개만 획득·stale 회수·소유 락만 해제 |
+
+---
+
+## 27. 섹터 강도 가산점 (B안 — 스크리닝 종목 선정 정확도 향상)
+
+> 스크리닝 100점(§2.2.1) 위에 **섹터 강도 가산점**을 더해, 강세 섹터·섹터 대장주에
+> 가점을 주고 약세 섹터에 감점을 줘 종목 선정의 정확도를 높인다. 가점은 *보정*이며
+> 하드리밋(§4)·잠금(§3.3)을 바꾸지 않는다. 스크리닝 점수(종목 선정)를 흔드는 변경이므로
+> §6·§13 대상 — paper 백테스트 검증 + 운영자 승인 후 live 신뢰.
+
+### 27.1 파이프라인
+```
+백테스트 날짜 선택 → 학습부 SectorDataProvider.sector_data(date)  [전일 종가 기준 섹터 데이터]
+       └─ 스크리닝 screen_once()가 종목 선정 전에 날짜만 넘겨 자동 호출
+              ↓ SectorSnapshot.bonus_for(code)
+       스크리닝 _score_one(): 기존 점수 + 섹터 가산점 → 최종 점수 → 70점 임계 판정
+              ↓
+       신호분석 …
+```
+
+### 27.2 학습부 섹터 데이터 추출 (`agents/learning/sector/`)
+- **함수/API**: `SectorDataProvider.sector_data(date:"YYYYMMDD")` → `SectorSnapshot`.
+  `scripts/sector_data.py <YYYY-MM-DD>`(또는 traidair `GET /learning/sector-data?date=`)가
+  동일 JSON 을 산출:
+  ```json
+  {"date":"전일날짜(YYYYMMDD)","sectors":[{"name":"반도체","change_pct":2.3,"top5_stocks":["삼성전자",...]}, ...]}
+  ```
+- **데이터 소스**: 보유 로컬 분봉(`CandleStore` 일봉 집계, §18). **룩어헤드 없음** — 날짜 D 의
+  '전일' = D 이전 가장 가까운 데이터 보유 거래일 P 이며, P 등락률은 P 와 그 직전 거래일
+  종가로만 계산한다(둘 다 D 이전). 섹터 등락률 = 구성종목 등락률 평균, 대장주 = 거래대금 top5.
+- **섹터 분류**(종목→섹터 매핑): `config/sectors.json`(권위, 18섹터·코드별) + `SectorClassifier`
+  임베디드 기본값 + 종목명 키워드 폴백. 미분류 종목은 가산점 0.
+
+### 27.3 가산점 규칙 (스크리닝)
+- 섹터 등락률: `+2%↑ → +5` / `+1~2% → +3` / `-1~+1% → 0` / `-1%↓ → -2`(경계 -1.0 포함).
+- 섹터 대장주(거래대금 top5) → `+2`.
+- 기존 점수에 합산(`breakdown["sector_bonus"]`) → 최종 점수로 70점 임계 판정.
+
+### 27.4 에러 처리(요구 4 — 백테스트 중단 금지)
+- 섹터 데이터 없음(저장소·이전 거래일 부재)·섹터 매핑 안 됨 → 가산점 0(기존 점수 그대로).
+- `SectorDataProvider`/`SectorClassifier`/스크리닝 호출부 모두 예외를 밖으로 던지지 않는다.
+
+### 27.5 구현 매핑 추가
+| 영역 | 모듈 | 주요 객체 |
+|---|---|---|
+| 섹터 분류 | `agents/learning/sector/classifier.py`, `config/sectors.json` | `SectorClassifier`(코드+이름 폴백, `from_file`), 18섹터 매핑 |
+| 섹터 데이터 추출 | `agents/learning/sector/main.py` | `SectorDataProvider.sector_data`(전일·캐시·무예외), `SectorSnapshot`(`bonus_for`/`to_dict`), `SectorInfo` |
+| 스크리닝 가산점 | `agents/intel/screening/main.py` | `ScreeningAgent(sector_provider=…)`, `_resolve_sector_snapshot`, `_score_one`(섹터 가산점 합산) |
+| 백테스트 와이어링 | `scripts/run_backtest.py` | `SectorDataProvider.from_root` 주입(`sector_provider=…`) |
+| CLI/API | `scripts/sector_data.py` | `sector_data_for(date)`(GET /learning/sector-data 백엔드) |
+| 테스트 | `tests/unit/test_sector.py` | 분류기·추출기·가산점 구간·무예외 폴백·스크리닝 통합 |
 
 ---
 

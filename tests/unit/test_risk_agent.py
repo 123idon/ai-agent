@@ -68,6 +68,7 @@ def _signal(*, price: int = 70_000, kind: Signal = Signal.STRONG_ENTRY,
         use_credit_hint=use_credit,
         timestamp=datetime(2026, 5, 29, 10, 30, tzinfo=KST),
         reason="STRONG",
+        daily_strong=True,   # 일봉 강세 → STRONG 사이즈 0.7 (§5 사이징 개정)
     )
 
 
@@ -112,8 +113,8 @@ async def test_risk_agent_approves_within_limits() -> None:
 
     assert isinstance(result, ApprovedOrder)
     assert result.qty > 0
-    # cash 1억 × 30% / 70_000 = 428주
-    assert result.qty == 100_000_000 * 30 // 100 // 70_000
+    # STRONG 매수금액 = cash 1억 × 2(신용) × 0.7 = 1.4억 → 1.4억 / 70_000 = 2000주
+    assert result.qty == int(100_000_000 * 2.0 * 0.7) // 70_000
     assert result.price == 70_000
     assert len(approved) == 1
     assert rejected == []
@@ -199,6 +200,61 @@ async def test_risk_agent_rejects_when_cash_too_small() -> None:
 # ─────────────────────────── sizing ───────────────────────────
 
 
+# ─────────────────────────── §19 메모리 등급 게이트 ───────────────────────────
+
+
+async def test_grade_memory_does_not_reject_green() -> None:
+    """GREEN(정상 운영)은 과거 승률이 낮아도 메모리 사유로 거절하지 않는다.
+
+    GREEN을 막으면 무거래 자가정지(죽음의 나선)에 빠지므로 기본 등급은 제외한다.
+    """
+    from agents.intel.market_watch.main import MarketGrade
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/api/kis/balance":
+            return httpx.Response(200, json=_BALANCE_RESPONSE)
+        if req.url.path == "/api/kis/orderbook":
+            return httpx.Response(200, json=_ORDERBOOK_RESPONSE)
+        raise AssertionError(req.url.path)
+
+    bus = Bus()
+    approved = bus.collector(TOPIC_APPROVED)
+    async with _kis(handler) as kc:
+        agent = RiskAgent(
+            kc, HardLimitGate(_hl()), bus, clock=_midday_clock,
+            market_state_provider=lambda: MarketGrade.GREEN,
+            grade_memory=lambda g: (10.0, 50),   # 매우 낮은 승률·충분한 표본
+        )
+        result = await agent.review(_signal())
+    assert isinstance(result, ApprovedOrder)
+    assert len(approved) == 1
+
+
+async def test_grade_memory_still_rejects_non_green() -> None:
+    """비-GREEN(YELLOW 등) 위험 등급에서는 낮은 과거 승률이면 메모리 거절 유지."""
+    from agents.intel.market_watch.main import MarketGrade
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/api/kis/balance":
+            return httpx.Response(200, json=_BALANCE_RESPONSE)
+        if req.url.path == "/api/kis/orderbook":
+            return httpx.Response(200, json=_ORDERBOOK_RESPONSE)
+        raise AssertionError(req.url.path)
+
+    bus = Bus()
+    rejected = bus.collector(TOPIC_REJECTED)
+    async with _kis(handler) as kc:
+        agent = RiskAgent(
+            kc, HardLimitGate(_hl()), bus, clock=_midday_clock,
+            market_state_provider=lambda: MarketGrade.YELLOW,
+            grade_memory=lambda g: (10.0, 50),
+        )
+        result = await agent.review(_signal())   # STRONG → YELLOW 자체는 통과
+    assert isinstance(result, RejectedOrder)
+    assert result.violations[0].rule_id == "MEMORY_GRADE"
+    assert len(rejected) == 1
+
+
 async def test_conditional_entry_uses_smaller_size() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/api/kis/balance":
@@ -211,10 +267,13 @@ async def test_conditional_entry_uses_smaller_size() -> None:
     async with _kis(handler) as kc:
         agent = RiskAgent(
             kc, HardLimitGate(_hl()), bus,
-            sizing=SizingParams(base_pct_strong=0.30, base_pct_conditional=0.20),
+            sizing=SizingParams(
+                cash_fraction_strong=0.7, cash_fraction_conditional=0.5,
+                credit_multiplier=2.0,
+            ),
             clock=_midday_clock,
         )
         result = await agent.review(_signal(kind=Signal.CONDITIONAL_ENTRY))
     assert isinstance(result, ApprovedOrder)
-    # cash 1억 × 20% / 70_000 = 285주
-    assert result.qty == 100_000_000 * 20 // 100 // 70_000
+    # CONDITIONAL 매수금액 = cash 1억 × 2(신용) × 0.5 = 1억 → 1억 / 70_000 = 1428주
+    assert result.qty == int(100_000_000 * 2.0 * 0.5) // 70_000

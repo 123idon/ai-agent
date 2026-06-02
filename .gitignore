@@ -13,6 +13,10 @@ build/
 .env
 .env.local
 config/kis_api.yaml
+66650597_appkey.txt
+66650597_secretkey.txt
+*_appkey.txt
+*_secretkey.txt
 
 # State & Logs
 state/*
@@ -23,6 +27,9 @@ logs/*
 # Data (영구 보관은 별도 백업 전략)
 data/market/
 data/postmortem/
+data/candles/
+data/journal/
+data/memory/
 
 # IDE / OS / Tooling
 .idea/

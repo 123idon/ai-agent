@@ -24,6 +24,12 @@ signal:
   rsi:
     entry_zone: [50, 65]
     overbought: 70
+  breakout:
+    lookback: 10
+    volume_mult: 2.0
+  entry_rules:
+    strong_min_indicators: 4
+    conditional_min_indicators: 3
 stop_loss:
   technical_stop_enabled: true
   technical_buffer_pct: 0.005
@@ -32,13 +38,12 @@ take_profit:
   step1:
     pct_range: [0.03, 0.05]
     close_ratio: 0.5
-time_stop:
-  enabled: true
-  evaluation_minutes: 30
-  min_profit_pct: 0.01
-  action: "reduce_50"
-  first_check_minutes: 15
-  first_check_action: "hold"
+entry:
+  conditional_cap_pct: 0.7
+  sizing:
+    cash_fraction_strong: 0.7
+    cash_fraction_conditional: 0.4
+    credit_multiplier: 2.0
 """
 
 
@@ -77,10 +82,15 @@ def test_parser_rsi_range() -> None:
     assert sugg["signal.rsi.entry_zone"] == [55, 65]
 
 
-def test_parser_timestop_and_hardstop() -> None:
-    sugg = {s.key: s.value for s in extract_changes("타임스톱 25분으로 하고 하드 손절 -2%로")}
-    assert sugg["time_stop.evaluation_minutes"] == 25
+def test_parser_hardstop() -> None:
+    sugg = {s.key: s.value for s in extract_changes("하드 손절 -2%로")}
     assert abs(sugg["stop_loss.hard_max_pct"] - (-0.02)) < 1e-9
+
+
+def test_parser_ignores_timestop() -> None:
+    # 타임스톱은 제거되어(§5.5) 어떤 문장에서도 time_stop 변경을 추출하지 않는다.
+    sugg = {s.key: s.value for s in extract_changes("타임스톱 25분으로 하고 1차 타임스톱 10분")}
+    assert not any(k.startswith("time_stop") for k in sugg)
 
 
 def test_parser_ignores_vague_text() -> None:
@@ -94,19 +104,79 @@ def test_parser_technical_buffer_not_confused_with_hard_stop() -> None:
     assert "stop_loss.hard_max_pct" not in sugg
 
 
-def test_parser_first_check_and_main_timestop() -> None:
-    sugg = {s.key: s.value for s in
-            extract_changes("1차 타임스톱 10분, 타임스톱 25분으로 하고 전량 청산으로")}
-    assert sugg["time_stop.first_check_minutes"] == 10
-    assert sugg["time_stop.evaluation_minutes"] == 25
-    assert sugg["time_stop.action"] == "exit_all"
-
-
-def test_parser_timestop_min_profit_and_toggle() -> None:
-    sugg = {s.key: s.value for s in
-            extract_changes("타임스톱 수익 0.5% 미만이면 정리, 기술적 손절 끄기")}
-    assert abs(sugg["time_stop.min_profit_pct"] - 0.005) < 1e-9
+def test_parser_technical_stop_toggle() -> None:
+    sugg = {s.key: s.value for s in extract_changes("기술적 손절 끄기")}
     assert sugg["stop_loss.technical_stop_enabled"] is False
+
+
+# ───────────── 신호 진입 조건 개수 / 비중 / 거래량 / 하드리밋 ─────────────
+
+
+def test_parser_signal_required_count() -> None:
+    # 요구 4: "신호 조건 N개로" → strong_min_indicators
+    sugg = {s.key: s.value for s in extract_changes("신호 조건 4개로 바꿔줘")}
+    assert sugg["signal.entry_rules.strong_min_indicators"] == 4
+
+
+def test_parser_signal_count_arrow_takes_target() -> None:
+    # "5개→4개"는 마지막(목표) 숫자 4를 취한다.
+    sugg = {s.key: s.value for s in extract_changes("신호분석 조건 5개→4개로 바꿔줘")}
+    assert sugg["signal.entry_rules.strong_min_indicators"] == 4
+
+
+def test_parser_conditional_count() -> None:
+    sugg = {s.key: s.value for s in extract_changes("조건부 진입은 2개만 충족하면 되게")}
+    assert sugg["signal.entry_rules.conditional_min_indicators"] == 2
+
+
+def test_parser_volume_targets_breakout_key() -> None:
+    # 거래량 배수는 실제 매매에 쓰이는 breakout.volume_mult 를 바꾼다(legacy 키 아님).
+    sugg = {s.key: s.value for s in extract_changes("돌파 거래량 2.5배로")}
+    assert abs(sugg["signal.breakout.volume_mult"] - 2.5) < 1e-9
+    assert "signal.volume_surge_multiplier" not in sugg
+
+
+def test_parser_position_weight() -> None:
+    sugg = {s.key: s.value for s in extract_changes("진입 비중을 80%로 키우자")}
+    assert abs(sugg["entry.sizing.cash_fraction_strong"] - 0.8) < 1e-9
+
+
+def test_detect_hard_limit_request() -> None:
+    from core.consult import detect_hard_limit_request
+
+    assert detect_hard_limit_request("동시 보유 종목 수 5개로 늘려줘") is not None
+    assert "HL-01" in detect_hard_limit_request("보유 종목 수를 늘리자")
+    assert detect_hard_limit_request("RSI 55~65로") is None
+
+
+def test_editor_applies_signal_count_and_clamps(tmp_path: Path) -> None:
+    # 신호 조건 개수 적용 + 안전범위(1~4) 보정.
+    editor = StrategyEditor(config_path=_config(tmp_path), memory_dir=tmp_path,
+                            project_root=tmp_path, mode="paper", git_commit=False)
+    res = editor.apply("signal.entry_rules.strong_min_indicators", 3,
+                       ts="t", date="d", source="consult", label="진입 조건 개수")
+    assert res.ok and res.before == 4 and res.after == 3
+    # 5개 요청은 분봉 타점 총 4개라 상한 4로 보정.
+    res2 = editor.apply("signal.entry_rules.strong_min_indicators", 5,
+                        ts="t2", date="d", source="consult")
+    assert res2.ok and res2.after == 4 and "보정" in res2.reason
+
+
+def test_editor_applies_position_weight(tmp_path: Path) -> None:
+    editor = StrategyEditor(config_path=_config(tmp_path), memory_dir=tmp_path,
+                            project_root=tmp_path, mode="paper", git_commit=False)
+    res = editor.apply("entry.sizing.cash_fraction_strong", 0.8,
+                       ts="t", date="d", source="consult")
+    assert res.ok and abs(res.after - 0.8) < 1e-9
+
+
+def test_sizing_params_from_file(tmp_path: Path) -> None:
+    from agents.risk.risk_manager.main import SizingParams
+
+    sp = SizingParams.from_file(_config(tmp_path))
+    assert sp.cash_fraction_strong == 0.7
+    assert sp.cash_fraction_conditional == 0.4
+    assert sp.credit_multiplier == 2.0
 
 
 # ─────────────────────────── StrategyEditor ───────────────────────────
@@ -231,10 +301,10 @@ def test_hard_stop_too_loose_clamped_to_max(tmp_path: Path) -> None:
     assert "보정" in res.reason
 
 
-def test_time_stop_min_profit_clamped(tmp_path: Path) -> None:
-    # 타임스톱 수익 기준 안전범위 0~5%: 10% 요청 → 5%로 보정.
+def test_technical_buffer_clamped(tmp_path: Path) -> None:
+    # 기술적 손절 버퍼 안전범위 0~5%: 10% 요청 → 5%로 보정.
     editor = _paper_editor(tmp_path)
-    res = editor.apply("time_stop.min_profit_pct", 0.10, ts="t", date="d", source="review")
+    res = editor.apply("stop_loss.technical_buffer_pct", 0.10, ts="t", date="d", source="review")
     assert res.ok
     assert abs(res.after - 0.05) < 1e-9
     assert "보정" in res.reason
@@ -268,23 +338,12 @@ def test_review_consecutive_stoploss_narrows_rsi() -> None:
         _exit("t2", "hard_stop_loss", -0.02),
         _exit("t3", "technical_stop", -0.01),
         _exit("t4", "take_profit_1", 0.03),
-        _exit("t5", "time_stop", 0.0),
+        _exit("t5", "eod_force_close", 0.0),
     ]
-    learner = ReviewLearner(lambda k: {"signal.rsi.entry_zone": [50, 65],
-                                       "time_stop.evaluation_minutes": 30}.get(k))
+    learner = ReviewLearner(lambda k: {"signal.rsi.entry_zone": [50, 65]}.get(k))
     sugg = {s.key: s for s in learner.analyze(records)}
     assert "signal.rsi.entry_zone" in sugg
     assert sugg["signal.rsi.entry_zone"].to_value == [55, 65]
-
-
-def test_review_timestop_heavy_shortens() -> None:
-    records = [_exit(f"t{i}", "time_stop", 0.0) for i in range(4)] + [
-        _exit("t9", "take_profit_1", 0.03)
-    ]
-    learner = ReviewLearner(lambda k: {"signal.rsi.entry_zone": [50, 65],
-                                       "time_stop.evaluation_minutes": 30}.get(k))
-    sugg = {s.key: s for s in learner.analyze(records)}
-    assert sugg["time_stop.evaluation_minutes"].to_value == 25
 
 
 # ─────────────────────────── ImprovementLog 효과/롤백 ───────────────────────────
@@ -313,9 +372,9 @@ def test_improvement_evaluate_effects_and_rollback(tmp_path: Path) -> None:
 def test_session_brief_remembers(tmp_path: Path) -> None:
     imp = ImprovementLog.load(tmp_path)
     imp.record(ts="t", date="20260601", source="consult",
-               key="time_stop.evaluation_minutes", from_value=30, to_value=25)
+               key="stop_loss.hard_max_pct", from_value=-0.02, to_value=-0.03)
     brief = session_learning_brief(tmp_path)
-    assert "time_stop.evaluation_minutes 30→25" in brief
+    assert "stop_loss.hard_max_pct -0.02→-0.03" in brief
 
 
 # ─────────────────────────── Notion → strategy ───────────────────────────
@@ -325,12 +384,12 @@ def test_notion_extract_strategy_rules() -> None:
     knowledge = {"categories": {
         "signal": {"rules": [{"text": "RSI 55~65 구간에서만 진입한다"}]},
         "risk": {"rules": [{"text": "VWAP 아래에서는 진입 금지"},
-                           {"text": "타임스톱 20분으로 한다"}]},
+                           {"text": "하드 손절 -3%로 한다"}]},
     }}
     sugg, pending = extract_strategy_rules(knowledge)
     keys = {s.key for s in sugg}
     assert "signal.rsi.entry_zone" in keys
-    assert "time_stop.evaluation_minutes" in keys
+    assert "stop_loss.hard_max_pct" in keys
     assert any("VWAP" in p.label for p in pending)
 
 

@@ -1,7 +1,9 @@
 """KIS Open API async client via traidair proxy (CLAUDE.md §15)."""
+from .agent_api import AgentApiClient
 from .client import KisClient
 from .config import KisClientConfig
 from .credit_ledger import CreditLedger
+from .paper_broker import PaperBroker
 from .exceptions import (
     KisAuthError,
     KisBusinessError,
@@ -39,8 +41,10 @@ from .models import (
 
 __all__ = [
     "KisClient",
+    "AgentApiClient",
     "KisClientConfig",
     "CreditLedger",
+    "PaperBroker",
     "KisError",
     "KisAuthError",
     "KisBusinessError",

@@ -3,18 +3,50 @@
 # 실제 파일명: kis_api.yaml (gitignore 대상)
 # ============================================================
 # traidair 프록시 베이스 URL. KIS는 traidair를 통해서만 호출한다(CLAUDE.md §15).
+# 백테스트(§17)의 모든 데이터(지수=Yahoo, 종목=KIS, 공시=DART)도 traidair를 거친다.
 traidair_base_url: "http://localhost:3000"
 
-paper:
-  base_url: "https://openapivts.koreainvestment.com:29443"
-  app_key: "YOUR_PAPER_APP_KEY"
-  app_secret: "YOUR_PAPER_APP_SECRET"
-  account_no: "00000000-01"
+# 모의(paper) 시작 가상자금. paper 모드는 시세/지표는 실전 키로 실제 받고,
+# 주문만 PaperBroker가 가상 체결한다(§3.1). 기본 1억.
+paper_start_cash: 100000000
 
+# paper(모의): 실전 KIS 키로 시세를 받고 주문은 가상 시뮬레이션한다.
+#   - 모의투자 전용 키가 없으면 이 섹션을 비워두거나 placeholder로 둬도 된다.
+#     그 경우 자동으로 live 섹션의 실전 키로 폴백한다(데이터 수신용).
+paper:
+  app_key: "YOUR_PAPER_APP_KEY"     # 없으면 live 키로 자동 폴백
+  app_secret: "YOUR_PAPER_APP_SECRET"
+  account_no: "00000000-01"         # 가상 체결이라 미사용(폴백 가능)
+
+# live(실전): 실주문이 KIS로 송신된다. 실전 키/계좌 필수.
 live:
-  base_url: "https://openapi.koreainvestment.com:9443"
   app_key: "YOUR_LIVE_APP_KEY"
   app_secret: "YOUR_LIVE_APP_SECRET"
   account_no: "00000000-01"
 
 token_cache_path: "state/kis_token.json"
+
+# ============================================================
+# 키움증권 REST API (과거 분봉 데이터 수집 전용 — CLAUDE.md §18 보강)
+# 라이브 매매 경로(§15 traidair/KIS)와 완전히 분리된 배치 ETL 전용 키다.
+#   - scripts/collect_candles_kiwoom.py 가 코스피200+코스닥150 분봉을 받아
+#     data/candles/{YYYYMMDD}.parquet 로 저장한다(기존 KIS 경로는 그대로 유지).
+#   - 비어 있으면 루트의 {계좌}_appkey.txt/{계좌}_secretkey.txt,
+#     이어서 env KIWOOM_APP_KEY/KIWOOM_APP_SECRET 순으로 자동 폴백.
+#   - 모의 도메인은 https://mockapi.kiwoom.com.
+# ============================================================
+kiwoom_app_key: ""
+kiwoom_app_secret: ""
+kiwoom_base_url: "https://api.kiwoom.com"
+
+# ============================================================
+# Notion 연동 (학습부 외부 지식 수집, CLAUDE.md §2.6 / 학습부)
+# 학습부(agents/learning/notion_sync)가 페이지 전체를 읽어 5개 부서 카테고리로 분류하고
+# data/memory/notion_knowledge.json 에 저장한다. 각 에이전트는 세션 시작 시 참조한다.
+#   token  : Notion Internal Integration Secret (secret_.../ntn_...). env NOTION_TOKEN 가능.
+#            통합을 대상 페이지에 '연결(공유)'해야 읽힌다.
+#   page_id: 읽을 페이지 ID(대시 유무 무관).
+# ============================================================
+notion:
+  token: "ntn_YOUR_NOTION_INTEGRATION_SECRET"
+  page_id: "35a0717882e381ce8fc3d257a5c24e4b"

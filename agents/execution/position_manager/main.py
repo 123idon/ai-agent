@@ -1,12 +1,13 @@
 """실시간 포지션 매니저 (CLAUDE.md §2.5, §5.3~5.5, §5.7).
 
-보유 중 단일 포지션을 주기적으로 점검하여 익절(3단)·기술적/하드 손절·신호붕괴·
-트레일링·타임스톱·EOD 강제 청산을 수행한다. 진입(매수)은 본 에이전트가 다루지
+보유 중 단일 포지션을 주기적으로 점검하여 익절(3단)·기술적/하드 손절·
+트레일링·EOD 강제 청산을 수행한다. **타임스톱(시간 기반 매도)은 제거되었다** —
+시간 경과를 이유로 파는 일은 없다. 진입(매수)은 본 에이전트가 다루지
 않으며, ``order.event``(매수 체결)를 구독해 포지션을 등록만 한다.
 
 보호 청산은 §5.4 "무조건 청산" 원칙에 따라 **리스크 게이트를 우회**해 시장가로
 즉시 송신한다(진입 게이트 HL-01/03/04/02는 청산과 무관). 손절류는 HL-02 연속
-손절 카운터에 산입, 익절류는 카운터 리셋, 타임스톱/EOD는 미산입(§5.5).
+손절 카운터에 산입, 익절류는 카운터 리셋, EOD는 미산입(§5.5).
 """
 from __future__ import annotations
 
@@ -22,7 +23,6 @@ from agents.execution.order.main import OrderAgent, OrderEvent
 from agents.execution.position_manager.exit_rules import (
     CounterEffect,
     ExitAction,
-    ExitKind,
     ExitParams,
     LivePositionState,
     evaluate_exit,
@@ -221,13 +221,8 @@ class PositionManagerAgent:
 
         # 손익률 사전 산출 → 쉬운 한국어 사유로 변환(요구 1).
         pnl_pct = (price - pos.entry_price) / pos.entry_price if pos.entry_price else 0.0
-        ts_min = (
-            self._p.time_stop_first_minutes
-            if action.kind == ExitKind.TIME_STOP_FIRST
-            else self._p.time_stop_minutes
-        )
         friendly = friendly_exit_reason(
-            action.kind, pnl_pct, ratio=action.ratio, time_stop_minutes=ts_min,
+            action.kind, pnl_pct, ratio=action.ratio,
         )
 
         order = ApprovedOrder(
@@ -263,10 +258,6 @@ class PositionManagerAgent:
                 pos.tp1_done = True
             elif action.kind.value == "take_profit_2":
                 pos.tp2_done = True
-            elif action.kind.value == "time_stop":
-                pos.time_stop_done = True   # 메인 타임스톱은 1회만
-            elif action.kind.value == "time_stop_first":
-                pos.time_stop_first_done = True  # 1차 타임스톱은 1회만(메인은 별도 발동)
 
         ev = ExitEvent(
             symbol=pos.symbol,

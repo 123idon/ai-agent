@@ -22,12 +22,17 @@ log = logging.getLogger(__name__)
 
 SUBSCRIBED_TOPICS = (
     "signal.entry",
+    "signal.analysis",
+    "signal.exit",
     "risk.decision.approved",
     "risk.decision.rejected",
     "order.event",
     "order.failed",
     "market.state",
     "screening.candidates",
+    "learning.proposal",
+    "meta.observation",
+    "meta.claude_call",
 )
 
 

@@ -17,6 +17,7 @@ import httpx
 
 from .config import KisClientConfig
 from .credit_ledger import CreditLedger
+from .paper_broker import PaperBroker
 from .exceptions import (
     KisAuthError,
     KisBusinessError,
@@ -36,6 +37,7 @@ from .models import (
     OrderbookSnapshot,
     OrderResult,
     OrderType,
+    Position,
     PriceSnapshot,
     Side,
     TokenSlice,
@@ -68,10 +70,17 @@ class KisClient:
         config: KisClientConfig,
         *,
         credit_ledger: CreditLedger | None = None,
+        paper_broker: PaperBroker | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._cfg = config
         self._ledger = credit_ledger
+        # paper(모의) 모드: 주문/잔고만 가상 처리. 미주입 시 in-memory 폴백.
+        self._paper: PaperBroker | None = None
+        if config.simulate_orders:
+            self._paper = paper_broker or PaperBroker(
+                persist_path=None, start_cash=config.paper_start_cash,
+            )
         self._owns_client = http_client is None
         self._client = http_client or httpx.AsyncClient(
             base_url=config.base_url,
@@ -81,6 +90,10 @@ class KisClient:
     @property
     def mode(self) -> Mode:
         return self._cfg.mode
+
+    @property
+    def simulate_orders(self) -> bool:
+        return self._paper is not None
 
     @property
     def account(self) -> str:
@@ -207,6 +220,20 @@ class KisClient:
             todayCount=data.get("todayCount", 0),
         )
 
+    async def get_daily_chart(
+        self,
+        code: str,
+        *,
+        lookback: int = 40,
+    ) -> ChartResponse:
+        """일봉 게이트(§5.2)용 일봉 캔들. traidair chart 라우트에 ``tf="D"`` 로 요청한다.
+
+        traidair가 일봉(``D``)을 지원해야 동작한다(미지원 시 ``ok:false`` →
+        ``KisBusinessError``; 호출자 분석부가 best-effort로 None 처리해 분봉만으로 판정).
+        """
+        del lookback  # traidair가 제공 깊이를 결정
+        return await self.get_chart(code, tf="D")
+
     async def get_orderbook(self, code: str) -> OrderbookSnapshot:
         data = await self._post("/api/kis/orderbook", {"code": code})
         return OrderbookSnapshot(
@@ -263,6 +290,8 @@ class KisClient:
         price: int = 0,
         order_type: OrderType = OrderType.LIMIT,
     ) -> OrderResult:
+        if self._paper is not None:
+            return await self._paper_fill(side, code, qty, price)
         data = await self._post(
             "/api/kis/order",
             {
@@ -275,6 +304,18 @@ class KisClient:
             },
         )
         return OrderResult(ordNo=str(data.get("ordNo") or ""), msg=data.get("msg"))
+
+    async def _paper_fill(
+        self, side: Side, code: str, qty: int, price: int,
+    ) -> OrderResult:
+        """모의 가상 체결. 시장가(price<=0)는 실전 현재가로 체결가를 결정한다."""
+        assert self._paper is not None
+        fill_price = float(price)
+        if fill_price <= 0:
+            snap = await self.get_price(code)   # 실전 시세로 체결가 결정
+            fill_price = float(snap.price)
+        ord_no = self._paper.fill(side, code, qty, fill_price)
+        return OrderResult(ordNo=ord_no, msg=f"PAPER SIMULATED @{int(fill_price)}")
 
     async def place_credit_order(
         self,
@@ -292,6 +333,9 @@ class KisClient:
         매도 시 loan_date 미지정이면 CreditLedger에서 자동 조회한다.
         매수 성공 시 CreditLedger.record_buy(code)로 매수 일자를 기록한다.
         """
+        if self._paper is not None:
+            # 모의 모드는 신용을 현금 가상 체결로 처리(실주문 없음)
+            return await self._paper_fill(side, code, qty, price)
         self._require_mode(Mode.LIVE)
         if side == Side.SELL and not loan_date:
             if self._ledger is None:
@@ -341,6 +385,11 @@ class KisClient:
         order_type: OrderType = OrderType.LIMIT,
         qty_all: bool = True,
     ) -> CancelResult:
+        if self._paper is not None:
+            # 모의 모드는 즉시 전량 체결이라 미체결/취소가 없다 — no-op 성공.
+            return CancelResult(
+                ordNo=org_ord_no, action=action, msg="PAPER no-op (instant fill)",
+            )
         data = await self._post(
             "/api/kis/order-cancel",
             {
@@ -363,6 +412,8 @@ class KisClient:
         )
 
     async def get_unfilled(self) -> list[UnfilledOrder]:
+        if self._paper is not None:
+            return []   # 모의 즉시 체결 → 미체결 없음
         data = await self._post(
             "/api/kis/unfilled",
             {"account": self._cfg.account},
@@ -376,6 +427,12 @@ class KisClient:
         price: int = 0,
         order_type: OrderType = OrderType.LIMIT,
     ) -> OrderableAmount:
+        if self._paper is not None:
+            cash = self._paper.orderable_cash()
+            max_qty = (cash // price) if price > 0 else 0
+            return OrderableAmount(
+                orderCashable=cash, maxBuyAmt=cash, maxBuyQty=int(max_qty),
+            )
         data = await self._post(
             "/api/kis/inquire-psbl-order",
             {
@@ -398,6 +455,8 @@ class KisClient:
     # ─────────────────────────── 잔고 ───────────────────────────
 
     async def get_balance(self) -> BalanceSnapshot:
+        if self._paper is not None:
+            return await self._paper_balance()
         data = await self._post(
             "/api/kis/balance",
             {"account": self._cfg.account},
@@ -409,6 +468,34 @@ class KisClient:
             positions=data["positions"],
         )
 
+    async def _paper_balance(self) -> BalanceSnapshot:
+        """가상 잔고. 보유 종목은 실전 현재가로 평가손익을 산출한다."""
+        assert self._paper is not None
+        cash, positions = self._paper.snapshot()
+        out: list[Position] = []
+        total_eval = 0
+        total_pnl = 0
+        for code, pos in positions.items():
+            cur = pos.avg_price
+            try:
+                cur = float((await self.get_price(code)).price) or pos.avg_price
+            except Exception:  # noqa: BLE001 — 시세 실패 시 평단가로 평가
+                log.debug("paper balance: price fetch failed for %s", code)
+            eval_amt = int(cur * pos.qty)
+            pnl = int((cur - pos.avg_price) * pos.qty)
+            pct = ((cur - pos.avg_price) / pos.avg_price * 100) if pos.avg_price else 0.0
+            total_eval += eval_amt
+            total_pnl += pnl
+            out.append(Position(
+                code=code, name="", qty=pos.qty, avgPrice=int(pos.avg_price),
+                currentPrice=int(cur), evalAmt=eval_amt, pnl=pnl,
+                pnlPct=f"{pct:.2f}", loanDt="", crdtType="",
+            ))
+        return BalanceSnapshot(
+            cash=int(cash), totalEval=int(cash) + total_eval,
+            totalPnl=total_pnl, positions=out,
+        )
+
     async def sync_credit_ledger(self) -> dict[str, str] | None:
         """현재 잔고의 신용 포지션을 ledger에 권위적으로 반영.
 
@@ -416,6 +503,8 @@ class KisClient:
         - 잔고에 없는 종목은 ledger에서 제거된다.
         - ``CreditLedger``가 주입되지 않은 경우 ``None`` 반환.
         """
+        if self._paper is not None:
+            return None   # 모의 모드는 신용 미사용
         if self._ledger is None:
             return None
         balance = await self.get_balance()

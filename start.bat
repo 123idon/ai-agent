@@ -173,7 +173,7 @@ REM ─── Claude Code ───
 :CLAUDE
 echo.
 echo Claude Code 를 새 창에서 시작합니다...
-start "Claude Code (C:\ai-team)" cmd /k "cd /d C:\ai-team && claude"
+start "Claude Code (C:\ai-team)" cmd /k "chcp 65001 >nul && cd /d C:\ai-team && claude"
 echo 새 창이 열렸습니다. 본 런처는 메뉴 유지.
 goto MENU
 

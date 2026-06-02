@@ -7,7 +7,9 @@
 지원 키:
   - signal.rsi.entry_zone                  ([low, high])
   - signal.rsi.overbought
-  - signal.volume_surge_multiplier
+  - signal.breakout.volume_mult            (5분봉 돌파 거래량 배수 — 실제 매매에 사용)
+  - signal.entry_rules.strong_min_indicators       (진입 필요/STRONG 조건 개수, 1~4)
+  - signal.entry_rules.conditional_min_indicators  (CONDITIONAL 조건 개수, 1~4)
   - screening.threshold
   - stop_loss.hard_max_pct                 (음수 비율)
   - stop_loss.technical_buffer_pct         (양수 비율, 기술적 손절 버퍼)
@@ -15,10 +17,11 @@
   - take_profit.step1.pct_range            ([low, high] 비율)
   - take_profit.step2.pct_range            ([low, high] 비율)
   - take_profit.step3_trailing.trail_from_high_pct  (비율)
-  - time_stop.evaluation_minutes           (메인 체크 분)
-  - time_stop.min_profit_pct               (메인 체크 수익 기준 비율)
-  - time_stop.action                       (reduce_50 | exit_all)
-  - time_stop.first_check_minutes          (1차 체크 분)
+  - entry.sizing.cash_fraction_strong      (진입 비중, 0~1)
+
+하드리밋(§4: 동시 보유 종목 수·연속 손절 쿨다운·진입 금지 시간·슬리피지·담보비율)은
+``detect_hard_limit_request`` 로 분리 감지해 명확한 거부 사유를 돌려준다(추출하지 않음).
+타임스톱(시간 기반 매도)은 제거되어(§5.5) time_stop 키는 더 이상 추출하지 않는다.
 """
 from __future__ import annotations
 
@@ -81,12 +84,14 @@ def extract_changes(text: str) -> list[Suggestion]:
             )
 
     # ── 거래량 배수: "거래량 ... 2.5배" / "거래량 배수 2.5" ──
+    #    실제 5분봉 돌파 타점에 쓰이는 signal.breakout.volume_mult 를 바꾼다(과거엔 미사용
+    #    legacy 키 signal.volume_surge_multiplier 를 건드려 매매에 반영되지 않았다).
     m = re.search(rf"거래량[^0-9]{{0,12}}{_NUM}\s*배?", low)
     if m:
         v = float(m.group(1))
         if 1.0 <= v <= 10.0:
-            out["signal.volume_surge_multiplier"] = Suggestion(
-                "signal.volume_surge_multiplier", v, "거래량 급증 배수", m.group(0),
+            out["signal.breakout.volume_mult"] = Suggestion(
+                "signal.breakout.volume_mult", v, "돌파 거래량 배수", m.group(0),
             )
 
     # ── 스크리닝 임계: "스크리닝 ... 85" / "임계 85점" ──
@@ -159,49 +164,65 @@ def extract_changes(text: str) -> list[Suggestion]:
                     key, [lo, hi], f"익절 {step_no}차 목표 범위", rng.group(0),
                 )
 
-    # ── 1차 타임스톱: "1차 타임스톱 15분" / "타임스톱 1차 15분" / "1차 체크 15분" ──
-    #    (메인 타임스톱보다 먼저 — 아래 메인 정규식과 충돌 방지) ──
-    m = re.search(
-        rf"(?:1\s*차[^0-9]{{0,8}}(?:타임\s*스톱|체크|점검)|타임\s*스톱[^0-9]{{0,6}}1\s*차)"
-        rf"[^0-9]{{0,8}}{_NUM}\s*분?",
-        low,
-    )
+    # ── 신호 진입 조건 충족 개수 (§5.2) ──
+    #    "조건부 진입 3개" → CONDITIONAL / "신호 조건 4개로", "지표 4개 충족", "5개→4개" → STRONG.
+    #    화살표/범위 표기(5→4)면 마지막 숫자(목표값)를 취한다(분봉 타점은 총 4개 → 1~4).
+    m = re.search(rf"조건부[^0-9]{{0,12}}{_NUM}\s*개", low)
     if m:
-        v = float(m.group(1))
-        if 0 <= v <= 120:
-            out["time_stop.first_check_minutes"] = Suggestion(
-                "time_stop.first_check_minutes", int(v), "1차 타임스톱(분)", m.group(0),
+        v = int(float(m.group(1)))
+        if 1 <= v <= 4:
+            out["signal.entry_rules.conditional_min_indicators"] = Suggestion(
+                "signal.entry_rules.conditional_min_indicators", v,
+                "조건부 진입 조건 개수", m.group(0),
+            )
+    # 조건부 문장은 위에서 conditional 로 처리했으므로 STRONG 추출에서 제외한다(한 숫자 중복 방지).
+    if "조건부" not in low and re.search(r"신호|진입\s*조건|지표|충족", low):
+        nums = re.findall(rf"{_NUM}\s*개", low)
+        if nums:
+            v = int(float(nums[-1]))
+            if 1 <= v <= 4:
+                out["signal.entry_rules.strong_min_indicators"] = Suggestion(
+                    "signal.entry_rules.strong_min_indicators", v,
+                    "신호 진입 조건 개수", f"{nums[-1]}개",
+                )
+
+    # ── 진입 비중(포지션 사이징): "비중 70%", "포지션 비중 0.7", "진입 비중 80%로" ──
+    m = re.search(rf"(?:진입\s*비중|포지션\s*비중|매수\s*비중|비중)[^0-9%]{{0,8}}{_NUM}\s*%?", low)
+    if m:
+        v = _pct_aware(m.group(1), m.group(0))
+        if 0.05 <= v <= 1.0:
+            out["entry.sizing.cash_fraction_strong"] = Suggestion(
+                "entry.sizing.cash_fraction_strong", round(v, 4),
+                "진입 비중(STRONG)", m.group(0),
             )
 
-    # ── 타임스톱 수익 기준: "타임스톱 수익 1%" / "타임스톱 기준 수익 0.5%" ──
-    m = re.search(rf"타임\s*스톱[^0-9%]{{0,12}}(?:수익|기준)[^0-9%]{{0,8}}{_NUM}\s*%?", low)
-    if m:
-        v = float(m.group(1))
-        if 0 < v <= 5:
-            out["time_stop.min_profit_pct"] = Suggestion(
-                "time_stop.min_profit_pct", round(_pct_aware(str(v), m.group(0)), 4),
-                "타임스톱 수익 기준", m.group(0),
-            )
-
-    # ── 타임스톱 동작: "타임스톱 전량 청산"→exit_all / "타임스톱 절반/50%"→reduce_50 ──
-    m = re.search(r"타임\s*스톱[^.\n]{0,16}(전량|모두|전부|절반|반량|50\s*%|reduce|exit)", low)
-    if m:
-        w = m.group(1)
-        act = "exit_all" if w in ("전량", "모두", "전부", "exit") else "reduce_50"
-        out["time_stop.action"] = Suggestion(
-            "time_stop.action", act, "타임스톱 동작", m.group(0),
-        )
-
-    # ── 타임스톱(메인): "타임스톱 ... 30분" / "타임스톱 25" ──
-    #    "1차" 문맥 매치는 건너뛰어 위 first_check 와 충돌하지 않게 한다(둘 다 동시 지정 가능).
-    for m in re.finditer(rf"타임\s*스톱[^0-9]{{0,12}}{_NUM}\s*분?", low):
-        if "1차" in low[max(0, m.start() - 6):m.start()]:
-            continue
-        v = float(m.group(1))
-        if 1 <= v <= 240:
-            out["time_stop.evaluation_minutes"] = Suggestion(
-                "time_stop.evaluation_minutes", int(v), "타임스톱(분)", m.group(0),
-            )
-        break
-
+    # (타임스톱 파싱 제거됨 — 시간 기반 매도가 폐지되어 time_stop 변경은 추출하지 않는다, §5.5.)
     return list(out.values())
+
+
+# ── 하드리밋(§4) 변경 요청 감지 (추출 대상 아님 — 명확한 거부 사유 제공) ──
+_HARD_LIMIT_HINTS: tuple[tuple[str, str], ...] = (
+    (r"동시\s*보유|보유\s*종목\s*수|최대\s*보유|종목\s*수\s*[^0-9]{0,6}\d",
+     "동시 보유 종목 수(최대 3)는 하드리밋(HL-01)이라 바꿀 수 없어요 (§4)."),
+    (r"연속\s*손절|쿨다운",
+     "연속 손절 쿨다운(3회·1시간)은 하드리밋(HL-02)이라 바꿀 수 없어요 (§4)."),
+    (r"장\s*초반|장\s*후반|진입\s*금지\s*시간|14\s*:?\s*30|09\s*:?\s*30",
+     "장초반/장후반 진입 금지 시간은 하드리밋(HL-03/HL-04)이라 바꿀 수 없어요 (§4)."),
+    (r"슬리피지|틱\s*가드",
+     "슬리피지 가드(5틱)는 하드리밋(HL-05)이라 바꿀 수 없어요 (§4)."),
+    (r"담보\s*유지|담보\s*비율|마진콜",
+     "신용 담보유지비율은 하드리밋(HL-06)이라 바꿀 수 없어요 (§4)."),
+)
+
+
+def detect_hard_limit_request(text: str) -> str | None:
+    """하드리밋(§4) 변경 요청이면 명확한 거부 사유를, 아니면 ``None``.
+
+    상담에서 화이트리스트 키 변경을 못 찾았을 때, "왜 안 되는지"를 분명히 알리기 위해
+    쓴다(요구 5: 거부할 때만 이유 명시). 하드리밋은 모드와 무관하게 절대 변경 불가.
+    """
+    low = text.lower()
+    for pat, reason in _HARD_LIMIT_HINTS:
+        if re.search(pat, low):
+            return reason
+    return None

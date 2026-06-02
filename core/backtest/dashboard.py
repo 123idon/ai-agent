@@ -65,6 +65,14 @@ class BacktestDashboard:
         # 당일 상태 (start_day에서 초기화)
         self._candidates: list[dict] = []
         self._trades: list[dict] = []
+        # 누적 거래 내역 (런 전체, 날짜 바뀌어도 유지 — 거래 탭 누적 표시용).
+        self._all_trades: list[dict] = []
+        # 거래 기록 영구 보존(중간에 멈춰도) — data/journal/backtest_trades.jsonl append-only.
+        try:
+            _root = self._state_path.resolve().parent.parent
+        except Exception:  # noqa: BLE001
+            _root = Path(".")
+        self._trades_journal = _root / "data" / "journal" / "backtest_trades.jsonl"
         self._last_signal: dict | None = None
         self._last_risk: dict | None = None
         self._last_order: dict | None = None
@@ -126,6 +134,25 @@ class BacktestDashboard:
             "n_exits": int(getattr(result, "n_exits", 0)),
         })
 
+    def _record_trade(self, rec: dict) -> None:
+        """거래 1건을 당일(`_trades`)·누적(`_all_trades`)에 적재하고 저널에 영구 기록.
+
+        날짜가 바뀌어도 ``_all_trades`` 는 유지되어 거래 탭에 전체 기간이 누적 표시되고,
+        ``data/journal/backtest_trades.jsonl`` 에 즉시 append 되어 중간에 멈춰도 보존된다.
+        """
+        rec.setdefault("date", self._day_date)
+        self._trades.append(rec)
+        self._all_trades.append(rec)
+        # 메모리 폭주 방지(극단적 장기 런) — 최근 5000건만 메모리 보존(저널엔 전부 남음).
+        if len(self._all_trades) > 5000:
+            self._all_trades = self._all_trades[-5000:]
+        try:
+            self._trades_journal.parent.mkdir(parents=True, exist_ok=True)
+            with self._trades_journal.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
+
     # ─────────────────────────── Bus 핸들러 ───────────────────────────
 
     async def _on_candidate(self, p: Any) -> None:
@@ -171,7 +198,7 @@ class BacktestDashboard:
         pnl_pct = float(getattr(p, "pnl_pct", 0.0))
         self._all_exit_pnls.append(pnl_pct)
         code = getattr(p, "symbol", "")
-        self._trades.append({
+        self._record_trade({
             "kind": "exit",
             "code": code, "name": self._name_map.get(code, ""),
             "exitKind": _v(getattr(p, "kind", "")),
@@ -215,7 +242,7 @@ class BacktestDashboard:
             "time": _hhmmss(getattr(p, "timestamp", None)),
         }
         if side == "buy":
-            self._trades.append({
+            self._record_trade({
                 "kind": "entry",
                 "code": code, "name": self._name_map.get(code, ""),
                 "qty": int(getattr(p, "qty", 0)),
@@ -327,16 +354,20 @@ class BacktestDashboard:
             prev_close = int(today[0].o)
         else:
             prev_close = 0
+        # 전일 봉(전체) + 당일 봉(가상 시각까지)을 연속으로 — HTS가 추세를 이어 그린다.
+        # prevCount 로 경계를 알려 HTS가 09:00 구분선·전일 흐림 처리를 한다.
         candles = [
             {"t": c.t, "o": int(c.o), "h": int(c.h),
              "l": int(c.l), "c": int(c.c), "v": int(c.v)}
-            for c in today
+            for c in (prevs + today)
         ]
         return {
             "code": code,
             "name": self._name_map.get(code, ""),
             "date": self._day_date,
+            "prevDate": getattr(ch, "prevDate", "") or "",
             "prevClose": prev_close,
+            "prevCount": len(prevs),
             "candles": candles,
         }
 
@@ -515,6 +546,8 @@ class BacktestDashboard:
             # 백테스트는 PaperBroker 즉시 체결이라 미체결이 없다 → 빈 목록(요구 6 탭 소스).
             "unfilled": [],
             "todayTrades": list(reversed(self._trades))[:50],
+            # 누적 거래 내역(최신순, 날짜 포함) — 거래 탭에 전체 기간 날짜별로 표시(요구 2).
+            "allTrades": list(reversed(self._all_trades))[:1000],
             "cumulative": cum,
             "agents": agents,
             "lastDays": self._day_results[-10:],

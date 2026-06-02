@@ -46,14 +46,21 @@ TUNE_BOUNDS_SCALAR: dict[str, tuple[float, float]] = {
     "screening.threshold": (70.0, 80.0),           # SSOT 70(§5.1). 80 초과 = funnel 굶음
     "signal.volume_surge_multiplier": (1.5, 3.0),  # 너무 높이면 진입 0
     "signal.rsi.overbought": (65.0, 80.0),         # 너무 낮추면 과매수 차단이 진입을 굶음
+    # 신호 진입 조건 충족 개수: 분봉 타점은 총 4개 → 1~4. 0/5+는 funnel 굶음/무의미.
+    "signal.entry_rules.strong_min_indicators": (1.0, 4.0),
+    "signal.entry_rules.conditional_min_indicators": (1.0, 4.0),
+    # 5분봉 돌파 거래량 배수/룩백 — 너무 높이면 진입 0(funnel 굶음).
+    "signal.breakout.volume_mult": (1.0, 5.0),
+    "signal.breakout.lookback": (3.0, 30.0),
+    # 포지션 사이징 — 과대/과소 진입 방지(신용 배수는 KIS 정책 한계 내).
+    "entry.sizing.cash_fraction_strong": (0.1, 1.0),
+    "entry.sizing.cash_fraction_conditional": (0.1, 1.0),
+    "entry.sizing.credit_multiplier": (1.0, 2.5),
+    "entry.conditional_cap_pct": (0.1, 1.0),
     # 손절 안전범위(요구 5): 운영자가 -0.5%~-10% 사이에서만 조정 가능. 양수/0/과도한 손절 차단.
     "stop_loss.hard_max_pct": (-0.10, -0.005),     # 최대 손절 -0.5% ~ -10%
     "stop_loss.technical_buffer_pct": (0.0, 0.05), # 진입캔들 저점 버퍼 0 ~ 5%
-    # 타임스톱 안전범위(요구 5)
-    "time_stop.evaluation_minutes": (5.0, 120.0),       # 메인 체크 5~120분
-    "time_stop.min_profit_pct": (0.0, 0.05),            # 메인 체크 기준 수익 0~5%
-    "time_stop.first_check_minutes": (0.0, 60.0),       # 1차 체크 0(비활성)~60분
-    "time_stop.first_check_min_profit_pct": (-0.05, 0.05),
+    # 타임스톱(시간 기반 매도)은 제거되어 안전범위 항목도 없다(§5.5).
 }
 # 인라인 리스트(원소별 (min,max)). entry_zone=[low,high] — low를 올려 진입창을 굶기지 못하게.
 TUNE_BOUNDS_LIST: dict[str, tuple[tuple[float, float], ...]] = {

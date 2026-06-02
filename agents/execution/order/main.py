@@ -3,6 +3,10 @@
 리스크부의 ``ApprovedOrder``를 받아 KisClient로 송신한다. 현금/신용은
 ``ApprovedOrder.use_credit``으로 분기하며, 모드(paper/live)는 KisClient가
 자체 관리한다(별도 라우터 불요).
+
+진입 사이징(가용현금 × 신용배수 × 비율)은 리스크부(§2.4)가 결정하지만, 일봉 강세
+여부(``entry_signal.daily_strong``)에 따라 비중이 달라지므로(§5 사이징: STRONG+일봉강세
+0.7 / CONDITIONAL 0.4) 주문 송신 시 그 근거를 함께 로깅해 추적성을 보장한다.
 """
 from __future__ import annotations
 
@@ -106,7 +110,17 @@ class OrderAgent:
             msg=result.msg,
             approved=order,
         )
-        log.info("ORDER_OK %s ord_no=%s", order.symbol, result.ordNo)
+        if order.side == Side.BUY:
+            sig = getattr(order, "entry_signal", None)
+            daily_strong = bool(getattr(sig, "daily_strong", False))
+            log.info(
+                "ORDER_OK %s ord_no=%s qty=%d %s (일봉강세=%s → 사이즈 %s)",
+                order.symbol, result.ordNo, order.qty,
+                "신용" if order.use_credit else "현금", daily_strong,
+                "↑(0.7)" if daily_strong else "보수(0.4)",
+            )
+        else:
+            log.info("ORDER_OK %s ord_no=%s", order.symbol, result.ordNo)
         await self._bus.publish(TOPIC_EVENT, event)
         # 신용 매수 성공 시 ledger 동기화 시도 (실패는 비치명)
         if order.use_credit and order.side == Side.BUY:

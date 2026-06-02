@@ -1,7 +1,8 @@
 """Backtest engine for paper-mode strategy validation (CLAUDE.md §11).
 
 walk-forward 방식. 분봉 시퀀스에서 SignalAnalyzer로 진입 시그널을 평가하고,
-설정된 익절/손절/타임스톱/트레일링 룰에 따라 청산을 시뮬레이션한다.
+설정된 익절/손절/트레일링 룰에 따라 청산을 시뮬레이션한다.
+**타임스톱(시간 기반 매도)은 제거되었다** — 시간 경과만으로 청산하지 않는다.
 
 가정/한계 (v1):
 - 단일 종목, 단일 포지션 (보유 중에는 신규 진입 없음)
@@ -31,7 +32,6 @@ class ExitReason(str, Enum):
     TRAILING = "trailing_stop"
     HARD_STOP = "hard_stop_loss"
     TECHNICAL = "technical_stop"
-    TIME_STOP = "time_stop"
     END_OF_DATA = "end_of_data"
 
 
@@ -46,7 +46,6 @@ class BacktestParams:
     trailing_pct: float = 0.015             # 고점 -1.5% 트레일링
     hard_stop_pct: float = -0.03            # 하드 -3%
     use_technical_stop: bool = True         # 진입 캔들 저점 이탈 시 청산
-    time_stop_bars: int = 30
     warmup_bars: int = 60
 
 
@@ -132,7 +131,7 @@ class BacktestEngine:
                     capital += trade.pnl
                     trades.append(trade)
                     position = None
-            elif self._p.time_stop_bars > 0 or True:
+            else:
                 decision = self._analyzer.evaluate(symbol, window, direction=direction)
                 if decision.signal in (Signal.STRONG_ENTRY, Signal.CONDITIONAL_ENTRY):
                     entry_price = float(cur.c)
@@ -195,10 +194,7 @@ class BacktestEngine:
         if had_tp1 and ret >= self._p.tp2_pct:
             return self._close_full(pos, idx, price, ExitReason.TP2)
 
-        # 5) 타임스톱
-        if (idx - pos.entry_idx) >= self._p.time_stop_bars and ret < 0.005:
-            return self._close_full(pos, idx, price, ExitReason.TIME_STOP)
-
+        # (타임스톱 제거됨 — 시간 경과를 이유로 파는 청산은 존재하지 않는다.)
         return None
 
     def _close_full(

@@ -94,7 +94,7 @@ class OrderIntent:
     price: int
     order_type: OrderType = OrderType.LIMIT
     use_credit: bool = False
-    is_new_entry: bool = True   # False = 청산 (익절/손절/타임스톱)
+    is_new_entry: bool = True   # False = 청산 (익절/손절/EOD)
 
 
 @dataclass(frozen=True)

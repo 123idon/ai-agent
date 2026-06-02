@@ -38,8 +38,8 @@ def test_yaml_value_reads_nested_scalar() -> None:
     # 독립 파싱한 기대값과 일치하는지(=중첩 키 탐색이 정확한지)만 검증한다.
     import yaml
     doc = yaml.safe_load(STRAT.read_text(encoding="utf-8"))
-    assert ap._yaml_value(STRAT, "time_stop.evaluation_minutes") \
-        == doc["time_stop"]["evaluation_minutes"]
+    assert ap._yaml_value(STRAT, "stop_loss.hard_max_pct") \
+        == doc["stop_loss"]["hard_max_pct"]
     assert ap._yaml_value(STRAT, "screening.threshold") == doc["screening"]["threshold"]
     assert ap._yaml_value(STRAT, "does.not.exist") is None
 

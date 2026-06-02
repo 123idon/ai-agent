@@ -55,7 +55,7 @@ async def test_price_success() -> None:
         assert req.url.path == "/api/kis/price"
         body = json.loads(req.content)
         assert body["code"] == "005930"
-        assert body["mode"] == "mock"  # paper → mock
+        assert body["mode"] == "real"  # 시세/지표/토큰은 항상 실전 호스트(§15.2)
         assert body["appKey"] == "AK"
         return httpx.Response(200, json={
             "ok": True, "code": "005930", "name": "삼성전자",

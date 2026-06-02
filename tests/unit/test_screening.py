@@ -117,6 +117,35 @@ async def test_screening_filters_below_threshold() -> None:
     assert received == []
 
 
+async def test_screening_fallback_never_empties_universe() -> None:
+    """§19 불변식: 모두 임계 미달이어도(메모리 감점 등) 최고점 1개를 폴백으로 발행한다.
+
+    단일 집중(§5.7) 파이프라인이 굶지 않게 보장 — 하류 게이트가 최종 판정한다.
+    """
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/api/kis/volume-rank":
+            return httpx.Response(200, json=_make_vol_rank_response())
+        if req.url.path == "/api/kis/chart":
+            body = json.loads(req.content)
+            return httpx.Response(200, json={
+                "ok": True, "code": body["code"], "date": "20260529",
+                "prevDate": "20260528", "tf": "1",
+                "candles": _make_uptrend_candles(),
+                "prevCount": 0, "todayCount": 70,
+            })
+        raise AssertionError(req.url.path)
+
+    bus = Bus()
+    received = bus.collector(TOPIC_CANDIDATES)
+    async with _kis(handler) as kc:
+        # 임계 200(도달 불가) → 통과 0이지만 폴백으로 최고점 1개는 나와야 한다.
+        agent = ScreeningAgent(kc, bus, ScreeningParams(threshold=200.0, top_n=2))
+        candidates = await agent.screen_once()
+    assert len(candidates) == 1
+    assert len(received) == 1
+    assert candidates[0].score < 200.0          # 임계 미달이지만 폴백으로 발행됨
+
+
 async def test_screening_isolates_per_symbol_chart_error() -> None:
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/api/kis/volume-rank":

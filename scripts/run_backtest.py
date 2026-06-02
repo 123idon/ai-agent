@@ -161,13 +161,14 @@ from agents.intel.market_watch.main import (
 )
 from agents.intel.screening.main import ScreeningAgent, ScreeningParams
 from agents.learning.journal.main import JournalAgent
+from agents.learning.sector import SectorDataProvider
 from agents.meta.optimizer.main import OptimizerAgent
 from agents.risk.risk_manager.hard_limits import (
     HardLimitGate,
     HardLimitsConfig,
     StopLossTracker,
 )
-from agents.risk.risk_manager.main import TOPIC_APPROVED, RiskAgent
+from agents.risk.risk_manager.main import TOPIC_APPROVED, RiskAgent, SizingParams
 from core.backtest import BacktestDashboard, BacktestRunner, ReplayKisClient
 from core.kis_client import KisClient, KisClientConfig, Mode
 from core.marketdata import CandleStore, load_universe, name_map
@@ -634,10 +635,14 @@ async def _run_backtest() -> int:
     analyzer = SignalAnalyzer(sig_params)
     tracker = StopLossTracker()
     market_watch = MarketWatchAgent(replay, bus, clock=clock.now, notion_knowledge=notion)
+    # §2.2.1 섹터 강도 가산점(B안) — 학습부가 로컬 분봉에서 전일 종가 기준 섹터 데이터를
+    # 추출(SectorDataProvider). 스크리닝이 종목 선정 전에 날짜만 넘겨 자동 호출한다.
+    sector_provider = SectorDataProvider.from_root(root, store, names=names)
     # §19 메모리 훅 주입 — 세션마다 최신 통계를 판단에 반영.
     screening = ScreeningAgent(
         replay, bus, scr_params, clock=clock.now,
         score_adjust=lambda c: mview().symbol_score_adjust(c),
+        sector_provider=sector_provider.sector_data,
         notion_knowledge=notion,
     )
     signal_agent = SignalAgent(
@@ -654,8 +659,11 @@ async def _run_backtest() -> int:
 
     bus.subscribe(TOPIC_STATE, on_state)
 
+    # 포지션 비중도 strategy_params.yaml(entry.sizing)에서 읽어 상담/회의 변경이 반영되게 함.
+    sizing = SizingParams.from_file(root / "config" / "strategy_params.yaml")
     risk = RiskAgent(
         replay, HardLimitGate(hl_cfg, stoploss_tracker=tracker), bus,
+        sizing=sizing,
         clock=clock.now, market_state_provider=lambda: current_grade["v"],
         grade_memory=lambda g: mview().grade_winrate(g),
         notion_knowledge=notion,

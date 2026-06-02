@@ -63,14 +63,7 @@ KEY_LABELS: dict[str, str] = {
     "take_profit.step2.close_ratio": "2차 익절 비율",
     "take_profit.step2.pct_range": "2차 익절 목표 범위",
     "take_profit.step3_trailing.trail_from_high_pct": "트레일링 이탈폭",
-    "time_stop.enabled": "타임스톱 사용",
-    "time_stop.evaluation_minutes": "타임스톱 평가 시간(분)",
-    "time_stop.min_profit_pct": "타임스톱 수익 기준(%)",
-    "time_stop.action": "타임스톱 동작(절반/전량)",
-    "time_stop.first_check_minutes": "1차 타임스톱 시간(분)",
-    "time_stop.first_check_action": "1차 타임스톱 동작",
-    "time_stop.first_check_min_profit_pct": "1차 타임스톱 수익 기준(%)",
-    "time_stop.flat_box_pct": "타임스톱 무방향 박스(%)",
+    # 타임스톱(시간 기반 매도)은 제거됨(§5.5) — time_stop 라벨 없음.
 }
 
 # 하드리밋(config/hard_limits.yaml, §4) 키 — 추출돼도 변경 불가(🔒 잠금 표시).
@@ -256,7 +249,7 @@ def action_extract(record: dict, mode: str) -> dict:
         "message": (f"실행 항목 {len(items)}개를 찾았어요 (적용 가능 {n_ok}개)."
                     if items else
                     "회의 내용은 있는데 바꿀 만한 전략 수치를 못 찾았어요. "
-                    "예: 'RSI 기준 55~65로', '타임스톱 20분으로'처럼 수치를 말해 주세요."),
+                    "예: 'RSI 기준 55~65로', '하드 손절 -3%로'처럼 수치를 말해 주세요."),
     }
 
 

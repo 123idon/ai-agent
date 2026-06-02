@@ -92,11 +92,13 @@ async def test_snapshot_collects_bus_events(tmp_path) -> None:
     assert bal["startCash"] == 1_000_000
     assert bal["todayPnl"] == 10_000          # totalEval - day_start_equity(1,000,000)
     assert bal["creditLimit"] == 900_000      # 백테스트 현금 기준
-    # 실시간 차트 재생용 분봉 (오늘 봉만, prevClose 별도) — 포커스=보유종목
+    # 실시간 차트 재생용 분봉 (전일 봉 전체 + 당일 봉, prevClose 별도) — 포커스=보유종목
     chart = snap["chart"]
     assert chart["code"] == "005930"
     assert chart["prevClose"] == 98           # 전일 마지막 종가
-    assert [c["t"] for c in chart["candles"]] == ["09:00", "09:01"]
+    # 전일 봉(15:30) 이어서 당일 봉(09:00, 09:01) — prevCount로 경계 표시
+    assert [c["t"] for c in chart["candles"]] == ["15:30", "09:00", "09:01"]
+    assert chart["prevCount"] == 1
     assert chart["candles"][-1]["c"] == 107
     # 에이전트 상태
     sig = snap["agents"]["signal"]
@@ -129,6 +131,50 @@ async def test_cumulative_after_day(tmp_path) -> None:
     assert c["tradeWinRate"] == 50.0
     # profit factor = 0.04 / 0.03
     assert c["profitFactor"] == round(0.04 / 0.03, 2)
+
+
+async def test_alltrades_persist_across_days(tmp_path) -> None:
+    """거래 내역은 날짜가 바뀌어도 누적 유지되고 data/journal/ 에 영구 기록된다(요구 2)."""
+    bus = Bus()
+    clock = SimClock(at_kst(date(2024, 1, 4), time(10, 30)))
+    dash = BacktestDashboard(
+        clock, broker=SimpleNamespace(), replay=_FakeReplay(), bus=bus,
+        state_path=tmp_path / "state" / "backtest_live.json",
+        start_cash=1_000_000,
+    )
+    # 1일차: 진입 1 + 청산 1
+    dash.start_day("20240104")
+    await bus.publish("order.event", SimpleNamespace(
+        side="buy", symbol="005930", qty=10, price=100, use_credit=False, timestamp=None))
+    await bus.publish("signal.exit", SimpleNamespace(
+        symbol="005930", kind="tp1", qty=10, price=110, pnl_pct=0.10,
+        counter="takeprofit", reason="tp1", timestamp=None))
+    await dash.end_day(DayResult(
+        date="20240104", start_cash=1_000_000, end_value=1_010_000,
+        pnl=10_000, pnl_pct=1.0, n_entries=1, n_exits=1))
+
+    # 2일차 시작 → 당일 내역은 비지만 누적(allTrades)은 유지돼야 한다
+    dash.start_day("20240105")
+    snap = await dash.snapshot()
+    assert snap["todayTrades"] == []                 # 당일 탭은 초기화(보유 탭은 당일만)
+    assert len(snap["allTrades"]) == 2               # 누적은 전일 2건 보존
+    assert {t["date"] for t in snap["allTrades"]} == {"20240104"}
+
+    # 2일차에 1건 추가 → 누적 3건, 날짜 2종
+    await bus.publish("order.event", SimpleNamespace(
+        side="buy", symbol="000660", qty=5, price=200, use_credit=False, timestamp=None))
+    snap = await dash.snapshot()
+    assert len(snap["allTrades"]) == 3
+    assert snap["allTrades"][0]["date"] == "20240105"   # 최신순(reversed)
+    assert {t["date"] for t in snap["allTrades"]} == {"20240104", "20240105"}
+
+    # 저널 영구 기록(중간에 멈춰도 보존) — 3건 append
+    jf = tmp_path / "data" / "journal" / "backtest_trades.jsonl"
+    assert jf.exists()
+    lines = [ln for ln in jf.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 3
+    recs = [json.loads(ln) for ln in lines]
+    assert [r["date"] for r in recs] == ["20240104", "20240104", "20240105"]
 
 
 async def test_progress_day_index_and_total(tmp_path) -> None:

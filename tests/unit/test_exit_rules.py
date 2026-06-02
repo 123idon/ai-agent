@@ -12,7 +12,6 @@ from agents.execution.position_manager.exit_rules import (
     ExitKind,
     ExitParams,
     LivePositionState,
-    action_ratio,
     evaluate_exit,
     select_tp_targets,
 )
@@ -76,7 +75,7 @@ def test_hard_stop_at_minus_3pct() -> None:
 
 
 def test_technical_stop_below_entry_low() -> None:
-    # 진입캔들 저점 -0.5%(9900×0.995=9850.5) 이탈, 하드(-2%=9800)에는 미도달
+    # 진입캔들 저점 -0.5%(9900×0.995=9850.5) 이탈, 하드(-3%=9700)에는 미도달
     a = evaluate_exit(_state(), price=9_840, now=_now(), breakdown_count=0, params=_params())
     assert a.kind == ExitKind.TECHNICAL
     assert a.counter == CounterEffect.STOPLOSS
@@ -122,7 +121,7 @@ def test_breakdown_count_never_triggers_exit() -> None:
 def test_tp1_partial_close() -> None:
     a = evaluate_exit(_state(), price=10_300, now=_now(), breakdown_count=0, params=_params())
     assert a.kind == ExitKind.TP1
-    assert a.ratio == 0.4                        # §5.3 개정: 40% 청산
+    assert a.ratio == 0.5                        # §5.3: 1차 50% 청산
     assert a.counter == CounterEffect.TAKEPROFIT
 
 
@@ -131,7 +130,7 @@ def test_tp2_after_tp1() -> None:
         _state(tp1=True), price=10_600, now=_now(), breakdown_count=0, params=_params(),
     )
     assert a.kind == ExitKind.TP2
-    assert a.ratio == 0.4                        # §5.3 개정: 40% 청산
+    assert a.ratio == 0.3                        # §5.3: 2차 30% 청산
     assert a.counter == CounterEffect.TAKEPROFIT
 
 
@@ -145,7 +144,7 @@ def test_no_tp2_before_tp1() -> None:
 
 
 def test_trailing_after_tp1() -> None:
-    # tp1/tp2 완료, 고점 10800 대비 -2.04% 이탈(트레일링 -2%, §5.3 개정)
+    # tp1/tp2 완료, 고점 10800 대비 -2.04% 이탈(트레일링 -1.5%, §5.3)
     a = evaluate_exit(
         _state(tp1=True, tp2=True, high=10_800),
         price=10_580, now=_now(), breakdown_count=0, params=_params(),
@@ -162,107 +161,44 @@ def test_no_trailing_before_tp1() -> None:
     assert a.kind == ExitKind.HOLD
 
 
-# ─────────────────────────── 타임스톱 ───────────────────────────
+# ─────────── 타임스톱 제거 검증 (시간 기반 매도 금지, §5.5) ───────────
 
 
-def test_time_stop_flat_box() -> None:
+def test_no_time_stop_after_long_hold() -> None:
+    # 진입 후 오래(31분) 지나고 방향이 안 나도(횡보) 시간 때문에 파는 일은 없다 → HOLD.
     entry_time = _now() - timedelta(minutes=31)
     a = evaluate_exit(
         _state(entry_time=entry_time), price=10_010, now=_now(),
         breakdown_count=0, params=_params(),
     )
-    assert a.kind == ExitKind.TIME_STOP
-    assert a.ratio == 0.5                       # §5.2: 30분 방향 미발생 → 50% 청산
-    assert a.counter == CounterEffect.NEUTRAL
+    assert a.kind == ExitKind.HOLD
 
 
-def test_no_time_stop_when_moving() -> None:
-    entry_time = _now() - timedelta(minutes=31)
-    # +1% 움직임 → 박스 이탈, 타임스톱 미발동 (그리고 +3% 미만이라 TP도 아님) → HOLD
+def test_no_time_stop_even_when_flat_and_old() -> None:
+    # 2시간 경과 + 미미한 손실(횡보)도 손절/EOD 전엔 청산하지 않는다(시간 트리거 없음).
+    entry_time = _now() - timedelta(minutes=120)
     a = evaluate_exit(
-        _state(entry_time=entry_time), price=10_100, now=_now(),
+        _state(entry_time=entry_time), price=9_980, now=_now(),
         breakdown_count=0, params=_params(),
     )
     assert a.kind == ExitKind.HOLD
 
 
-# ─────────── 타임스톱 2단 체크 + action 설정 (요구 1·2) ───────────
-
-
-def test_action_ratio_mapping() -> None:
-    assert action_ratio("hold") == 0.0
-    assert action_ratio("reduce_50") == 0.5
-    assert action_ratio("exit_all") == 1.0
-    assert action_ratio("EXIT_ALL") == 1.0       # 대소문자 무시
-    assert action_ratio("garbage") == 0.5        # 알 수 없으면 보수적 절반
-
-
-def test_time_stop_disabled() -> None:
-    # enabled=False면 타임스톱 발동 안 함 → HOLD
-    p = replace(_params(), time_stop_enabled=False)
-    entry_time = _now() - timedelta(minutes=31)
-    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
-                      breakdown_count=0, params=p)
-    assert a.kind == ExitKind.HOLD
-
-
-def test_time_stop_action_exit_all() -> None:
-    # action=exit_all이면 메인 체크가 전량(ratio 1.0) 청산
-    p = replace(_params(), time_stop_action="exit_all")
-    entry_time = _now() - timedelta(minutes=31)
-    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
-                      breakdown_count=0, params=p)
-    assert a.kind == ExitKind.TIME_STOP
-    assert a.ratio == 1.0
-    assert a.counter == CounterEffect.NEUTRAL
-
-
-def test_first_check_hold_does_not_sell() -> None:
-    # 1차 체크(15분, hold)는 청산하지 않고 보류 → 메인(30분) 전엔 HOLD
-    p = replace(_params(), time_stop_first_minutes=15, time_stop_first_action="hold")
-    entry_time = _now() - timedelta(minutes=20)   # 15 ≤ 20 < 30
-    a = evaluate_exit(_state(entry_time=entry_time), price=10_010, now=_now(),
-                      breakdown_count=0, params=p)
-    assert a.kind == ExitKind.HOLD
-
-
-def test_first_check_reduce_then_main() -> None:
-    p = replace(
-        _params(), time_stop_first_minutes=15, time_stop_first_action="reduce_50",
-    )
-    # 20분 경과(1차 구간) + 수익 미달(기본 first_min_profit 0.0, ret<0) → 1차 50% 청산
-    a = evaluate_exit(
-        _state(entry_time=_now() - timedelta(minutes=20)), price=9_980, now=_now(),
-        breakdown_count=0, params=p,
-    )
-    assert a.kind == ExitKind.TIME_STOP_FIRST
-    assert a.ratio == 0.5
-    assert a.counter == CounterEffect.NEUTRAL
-    # 1차 완료 표시 후에는 1차 재발동 없이 메인(30분)이 발동
-    st = _state(entry_time=_now() - timedelta(minutes=31))
-    st.time_stop_first_done = True
-    main = evaluate_exit(st, price=10_010, now=_now(), breakdown_count=0, params=p)
-    assert main.kind == ExitKind.TIME_STOP
-
-
-def test_first_check_skipped_when_profitable() -> None:
-    # 1차 구간이지만 수익 기준 이상이면 청산 안 함
-    p = replace(
-        _params(), time_stop_first_minutes=15, time_stop_first_action="reduce_50",
-        time_stop_first_min_profit=0.0,
-    )
-    a = evaluate_exit(
-        _state(entry_time=_now() - timedelta(minutes=20)), price=10_050, now=_now(),
-        breakdown_count=0, params=p,
-    )
-    assert a.kind == ExitKind.HOLD
+def test_exit_params_has_no_time_stop_fields() -> None:
+    # 타임스톱 파라미터는 ExitParams에서 완전히 제거되었다.
+    p = _params()
+    for attr in (
+        "time_stop_enabled", "time_stop_minutes", "time_stop_action",
+        "time_stop_first_minutes", "flat_box_pct",
+    ):
+        assert not hasattr(p, attr), f"{attr} 가 아직 남아있음"
 
 
 def test_technical_stop_disabled() -> None:
     # technical_stop_enabled=False → use_technical_stop False → 기술적 손절 미발동(하드만)
     p = replace(_params(), use_technical_stop=False, technical_stop_enabled=False)
-    a = evaluate_exit(_state(), price=9_840, now=_now(), breakdown_count=0, params=p)
-    assert a.kind == ExitKind.HOLD   # 9840은 하드(-2%=9800) 미도달, 기술적 꺼짐 → 보유
+    a = evaluate_exit(_state(), price=9_750, now=_now(), breakdown_count=0, params=p)
+    assert a.kind == ExitKind.HOLD   # 9750은 하드(-3%=9700) 미도달, 기술적 꺼짐 → 보유
 
 
 # ─────────────────────────── EOD ───────────────────────────
@@ -344,26 +280,21 @@ def test_dynamic_tp2_uses_target() -> None:
 def test_from_file_reads_strategy_params() -> None:
     p = ExitParams.from_file(ROOT / "config" / "strategy_params.yaml")
     assert p.tp1_pct == 0.03
-    assert p.tp1_close_ratio == 0.4                 # §5.3 개정
+    assert p.tp1_close_ratio == 0.5                 # §5.3: 1차 50%
     assert p.tp2_pct == 0.06
-    assert p.tp2_high == 0.10                        # +6~10%
-    assert p.tp2_close_ratio == 0.4
-    assert p.trailing_pct == 0.02                    # 고점 -2%
-    assert p.hard_stop_pct == -0.02                  # 최대 손절 -2%
+    assert p.tp2_high == 0.08                        # +6~8%
+    assert p.tp2_close_ratio == 0.3                 # §5.3: 2차 30%
+    assert p.trailing_pct == 0.015                   # 고점 -1.5%
+    assert p.hard_stop_pct == -0.03                  # 최대 손절 -3%
     assert p.technical_buffer_pct == 0.005           # 진입캔들 저점 -0.5%
     assert p.use_technical_stop is True
     assert p.technical_stop_enabled is True          # 요구 1: yaml에서 읽음
-    # 타임스톱 분은 consult/auto-learn 이 수시로 조정(§5.5·§24)하므로 하드코딩하지 않고
-    # 파일 실제값과 일치하는지(=from_file 매핑 정확성)만 본다.
-    import yaml
-    _doc = yaml.safe_load((ROOT / "config" / "strategy_params.yaml").read_text(encoding="utf-8"))
-    _ts = _doc["time_stop"]
-    assert p.time_stop_enabled == _ts["enabled"]
-    assert p.time_stop_minutes == _ts["evaluation_minutes"]
-    assert p.time_stop_min_profit == _ts["min_profit_pct"]
-    assert p.time_stop_action == _ts["action"]                       # reduce_50 | exit_all
-    assert p.time_stop_first_minutes == _ts["first_check_minutes"]
-    assert p.time_stop_first_action == _ts["first_check_action"]
-    assert p.time_stop_first_min_profit == _ts["first_check_min_profit_pct"]
     assert p.cutoff_time == time(15, 20, 0)
     assert p.force_close_time == time(15, 20, 0)
+
+
+def test_strategy_params_has_no_time_stop_section() -> None:
+    # 타임스톱(시간 기반 매도)은 제거되어 yaml에 time_stop 설정이 없어야 한다(§5.5).
+    import yaml
+    _doc = yaml.safe_load((ROOT / "config" / "strategy_params.yaml").read_text(encoding="utf-8"))
+    assert "time_stop" not in _doc

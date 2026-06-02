@@ -16,6 +16,7 @@ from enum import Enum
 from agents.analysis.signal.indicators import KST
 from core.kis_client import KisClient, MacroIndex
 from core.messaging import Bus
+from core.notion_client import NotionKnowledgeView
 
 log = logging.getLogger(__name__)
 
@@ -60,11 +61,18 @@ class MarketWatchAgent:
         params: MarketWatchParams | None = None,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(KST),
+        notion_knowledge: NotionKnowledgeView | None = None,
     ) -> None:
         self._kis = kis
         self._bus = bus
         self._p = params or MarketWatchParams()
         self._clock = clock
+        # 학습부 노션 지식(세션 시작 시 참조) — 시간대별·시장 환경 전략 카테고리.
+        self._notion = notion_knowledge
+        if notion_knowledge is not None and notion_knowledge.available:
+            note = notion_knowledge.summary_line("intel.market_watch")
+            if note:
+                log.info("📚 시장상황 %s", note)
 
     async def poll_once(self) -> MarketState:
         md = await self._kis.get_market_data(mode="realtime")

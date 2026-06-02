@@ -64,8 +64,7 @@ KEY_LABELS: dict[str, str] = {
     "take_profit.step2.close_ratio": "2차 익절 비율",
     "take_profit.step2.pct_range": "2차 익절 목표 범위",
     "take_profit.step3_trailing.trail_from_high_pct": "트레일링 이탈폭",
-    "time_stop.evaluation_minutes": "타임스톱 평가 시간(분)",
-    "time_stop.flat_box_pct": "타임스톱 무방향 박스(%)",
+    # 타임스톱(시간 기반 매도)은 제거됨(§5.5) — time_stop 라벨 없음.
 }
 
 
@@ -75,7 +74,7 @@ def _agent_for(key: str) -> tuple[str, str]:
         return "screening", "🔎 스크리닝"
     if key.startswith("signal"):
         return "signal", "📈 신호분석"
-    if key.startswith(("stop_loss", "take_profit", "time_stop")):
+    if key.startswith(("stop_loss", "take_profit")):
         return "risk", "🛡 리스크"
     if key.startswith("market"):
         return "market_watch", "🌐 시장상황"
