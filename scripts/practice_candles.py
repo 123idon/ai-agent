@@ -87,6 +87,43 @@ def action_list() -> dict:
     }
 
 
+def _prev_closes(date: str, symbol: str, need: int = 80, max_days: int = 3) -> list[int]:
+    """선택일 직전 거래일(들)의 1분봉 종가를 시간 오름차순으로 반환(이동평균 워밍업용).
+
+    **로컬 ``data/candles`` 파일만** 사용(외부 호출 0). 선택일 이전 날짜 파일을 최신→과거로
+    훑어 같은 종목 종가를 ``need``(MA60+여유=80) 개 이상 모일 때까지 모으되 ``max_days`` 로 제한.
+    반환은 **시간순(가장 오래된 것 먼저, 선택일 직전 봉이 맨 뒤)** — 당일 종가 앞에 그대로 이어
+    붙이면 연속 시계열이 된다. 미래 차단과 무관(전일=과거).
+    """
+    import pandas as pd
+
+    files = _date_files()  # 날짜 오름차순
+    stems = [p.stem for p in files]
+    if date not in stems:
+        return []
+    idx = stems.index(date)
+    days_chrono: list[list[int]] = []  # 최신 전일 → 과거 순으로 append
+    j = idx - 1
+    used = 0
+    while j >= 0 and used < max_days:
+        try:
+            df = pd.read_parquet(files[j], columns=["symbol", "t", "c"])
+        except Exception:  # noqa: BLE001
+            j -= 1
+            continue
+        sub = df[df["symbol"].astype(str) == symbol].sort_values("t")
+        if not sub.empty:
+            days_chrono.append([int(c) for c in sub["c"].tolist()])
+            used += 1
+            if sum(len(d) for d in days_chrono) >= need:
+                break
+        j -= 1
+    out: list[int] = []
+    for day in reversed(days_chrono):  # 과거 → 직전 전일 순(시간 오름차순)
+        out.extend(day)
+    return out
+
+
 def action_candles(date: str, symbol: str) -> dict:
     import pandas as pd
 
@@ -111,8 +148,11 @@ def action_candles(date: str, symbol: str) -> dict:
         }
         for r in sub.itertuples(index=False)
     ]
+    # 이동평균이 09:00 첫 봉부터 이어지도록 직전 거래일 종가를 함께 제공(MA 계산용, 화면 미표시)
+    prev_closes = _prev_closes(date, symbol)
     return {"ok": True, "date": date, "symbol": symbol,
-            "count": len(candles), "candles": candles}
+            "count": len(candles), "candles": candles,
+            "prevCloses": prev_closes, "prevCount": len(prev_closes)}
 
 
 def action_daily(symbol: str) -> dict:
