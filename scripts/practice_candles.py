@@ -124,6 +124,123 @@ def _prev_closes(date: str, symbol: str, need: int = 80, max_days: int = 3) -> l
     return out
 
 
+def _load_sectors() -> dict[str, str]:
+    """config/sectors.json 의 종목코드→섹터 매핑(없으면 빈 dict). 외부 호출 0."""
+    try:
+        data = json.loads((ROOT / "config" / "sectors.json").read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in (data.get("sectors") or {}).items()}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _market_context(date: str) -> dict | None:
+    """data/market_context/{D}.json (장전 시황 — 내용은 전부 D-1 이전 세션, 룩어헤드 없음)."""
+    f = ROOT / "data" / "market_context" / f"{date}.json"
+    if not f.is_file():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _day_aggregate(path) -> dict:
+    """하루치 parquet → {종목코드: {amt, vol, close}}.
+
+    amt(거래대금 근사)=Σ(분봉종가 × 분봉거래량), vol=Σ분봉거래량, close=그날 마지막 봉 종가.
+    지수(^KS11 등)·6자리 아닌 심볼은 제외. **이미 저장된 1분봉만** 사용(외부 호출 0).
+    """
+    import pandas as pd
+
+    df = pd.read_parquet(path, columns=["symbol", "t", "c", "v"])
+    df["symbol"] = df["symbol"].astype(str)
+    df = df[df["symbol"].map(lambda s: s.isdigit() and len(s) == 6)]
+    if df.empty:
+        return {}
+    df = df.assign(amt=df["c"].astype("int64") * df["v"].astype("int64"))
+    out: dict = {}
+    for sym, sub in df.groupby("symbol"):
+        sub = sub.sort_values("t")
+        out[str(sym)] = {
+            "amt": int(sub["amt"].sum()),
+            "vol": int(sub["v"].sum()),
+            "close": int(sub["c"].iloc[-1]),
+        }
+    return out
+
+
+def action_prep(date: str) -> dict:
+    """장전 후보(종목 선정) — 선택일 D 의 **직전 거래일 D-1 기준**으로만 산출.
+
+    ⭐ 룩어헤드 차단: 선택일 D 의 parquet 은 **절대 읽지 않는다**. D-1(거래대금·등락 기준)과
+    D-2(D-1 등락률 계산용 전전일 종가)만 사용하며, 시황은 data/market_context/{D}.json
+    (내용이 전부 D-1 이전 세션이라 장전에 알 수 있는 값)을 그대로 싣는다.
+
+    반환: rows(종목별 전일 거래대금/거래량/등락률/섹터, 거래대금 내림차순),
+          sectors(섹터별 자금 집계 내림차순), market(전일 시황), prevDate(=D-1).
+    """
+    date = "".join(ch for ch in str(date) if ch.isdigit())
+    files = _date_files()  # 날짜 오름차순
+    stems = [p.stem for p in files]
+    if date not in stems:
+        return {"ok": False, "error": f"해당 날짜 데이터 없음: {date}"}
+    idx = stems.index(date)
+    if idx < 1:
+        return {"ok": False, "error": "직전 거래일(D-1) 데이터가 없습니다(가장 과거 날짜)"}
+    prev = stems[idx - 1]
+    try:
+        prev_agg = _day_aggregate(files[idx - 1])
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"전일 집계 실패: {e}"}
+    prev_prev_agg = {}
+    if idx >= 2:
+        try:
+            prev_prev_agg = _day_aggregate(files[idx - 2])
+        except Exception:  # noqa: BLE001 — 전전일 없으면 등락률만 미표시(치명 아님)
+            prev_prev_agg = {}
+
+    names = _name_map()
+    sectors = _load_sectors()
+    rows: list[dict] = []
+    for code, a in prev_agg.items():
+        pclose = a["close"]
+        pp = prev_prev_agg.get(code)
+        chg = None
+        if pp and pp.get("close"):
+            chg = round((pclose - pp["close"]) / pp["close"] * 100.0, 2)
+        rows.append({
+            "code": code,
+            "name": names.get(code, code),
+            "sector": sectors.get(code, ""),
+            "amt": a["amt"],
+            "amtEok": round(a["amt"] / 1e8, 1),
+            "vol": a["vol"],
+            "close": pclose,
+            "changePct": chg,
+        })
+    rows.sort(key=lambda r: r["amt"], reverse=True)
+
+    sec_map: dict[str, dict] = {}
+    for r in rows:
+        s = r["sector"] or "기타"
+        e = sec_map.setdefault(s, {"sector": s, "amt": 0, "count": 0})
+        e["amt"] += r["amt"]
+        e["count"] += 1
+    sec_rows = sorted(sec_map.values(), key=lambda x: x["amt"], reverse=True)
+    for e in sec_rows:
+        e["amtEok"] = round(e["amt"] / 1e8, 1)
+
+    return {
+        "ok": True,
+        "date": date,
+        "prevDate": prev,
+        "rows": rows,
+        "sectors": sec_rows,
+        "market": _market_context(date),
+        "symbolCount": len(rows),
+    }
+
+
 def action_candles(date: str, symbol: str) -> dict:
     import pandas as pd
 
@@ -196,18 +313,21 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--daily", action="store_true")
+    ap.add_argument("--prep", action="store_true")
     ap.add_argument("--date")
     ap.add_argument("--symbol")
     args = ap.parse_args()
     try:
         if args.list:
             _emit(action_list())
+        elif args.prep and args.date:
+            _emit(action_prep(args.date))
         elif args.daily and args.symbol:
             _emit(action_daily(args.symbol))
         elif args.date and args.symbol:
             _emit(action_candles(args.date, args.symbol))
         else:
-            _emit({"ok": False, "error": "--list / --daily+--symbol / --date+--symbol 필요"})
+            _emit({"ok": False, "error": "--list / --prep+--date / --daily+--symbol / --date+--symbol 필요"})
     except Exception as e:  # noqa: BLE001 — 어떤 경우에도 JSON 한 줄
         _emit({"ok": False, "error": f"실행 오류: {e}"})
     return 0
