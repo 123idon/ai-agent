@@ -50,7 +50,10 @@ class KisClientConfig:
         mode_override: Mode | None = None,
     ) -> "KisClientConfig":
         mode_path = project_root / "config" / "mode.yaml"
-        kis_path = project_root / "config" / "kis_api.yaml"
+        # 키/비밀은 key/ 폴더 우선, 없으면 기존 config/ 폴백(하위호환·테스트).
+        kis_path = project_root / "key" / "kis_api.yaml"
+        if not kis_path.exists():
+            kis_path = project_root / "config" / "kis_api.yaml"
         if not mode_path.exists():
             raise KisConfigError(f"mode.yaml not found at {mode_path}")
         if not kis_path.exists():

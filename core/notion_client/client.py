@@ -81,7 +81,10 @@ class NotionConfig:
         token = ""
         page_id = ""
         search_query = ""
-        kis_path = project_root / "config" / "kis_api.yaml"
+        # 키/비밀은 key/ 폴더 우선, 없으면 기존 config/ 폴백(하위호환·테스트).
+        kis_path = project_root / "key" / "kis_api.yaml"
+        if not kis_path.exists():
+            kis_path = project_root / "config" / "kis_api.yaml"
         if kis_path.exists():
             try:
                 doc = yaml.safe_load(kis_path.read_text(encoding="utf-8")) or {}

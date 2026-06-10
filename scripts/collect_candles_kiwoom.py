@@ -56,20 +56,25 @@ def _first_nonempty(*vals: object) -> str:
 
 
 def _read_key_file(root: Path, suffix: str) -> str:
-    for p in sorted(root.glob(f"*_{suffix}.txt")):
-        try:
-            txt = p.read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        if txt:
-            return txt
+    # key/ 폴더 우선, 없으면 루트 폴백(하위호환).
+    for d in (root / "key", root):
+        for p in sorted(d.glob(f"*_{suffix}.txt")):
+            try:
+                txt = p.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if txt:
+                return txt
     return ""
 
 
 def load_kiwoom_keys(root: Path) -> tuple[str, str, str]:
     """(app_key, app_secret, base_url) — config → 키파일 → env 순."""
     cfg: dict = {}
-    kis_path = root / "config" / "kis_api.yaml"
+    # 키/비밀은 key/ 폴더 우선, 없으면 기존 config/ 폴백(하위호환).
+    kis_path = root / "key" / "kis_api.yaml"
+    if not kis_path.exists():
+        kis_path = root / "config" / "kis_api.yaml"
     if kis_path.exists():
         try:
             cfg = yaml.safe_load(kis_path.read_text(encoding="utf-8")) or {}

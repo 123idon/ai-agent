@@ -17,6 +17,11 @@ config/kis_api.yaml
 66650597_secretkey.txt
 *_appkey.txt
 *_secretkey.txt
+# 모든 키/비밀은 key/ 폴더로 통합 (노트북 이전 시 이 폴더만 수동 복사). 절대 커밋 금지.
+key/
+key.zip
+# 압축 묶음은 키/비밀이 들어가기 쉬우므로 일괄 제외 (필요 시 개별 화이트리스트)
+*.zip
 
 # State & Logs
 state/*

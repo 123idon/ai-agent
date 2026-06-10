@@ -32,9 +32,9 @@ REM ============================================================
 REM   사전 점검 (traidair → venv → 패키지 → 설정 → 디렉터리)
 REM ============================================================
 
-REM --- [1/5] traidair 프록시 서버 (가장 먼저 자동 백그라운드 시작) ---
-echo [1/5] traidair 프록시 서버 ^(localhost:3000^)...
-call :ENSURE_TRAIDAIR
+REM --- [1/5] traidair 프록시 서버 (항상 재시작: 기존 종료 → 새로 실행) ---
+echo [1/5] traidair 프록시 서버 ^(localhost:3000^) 재시작...
+call :RESTART_TRAIDAIR
 
 REM --- HTS 화면 브라우저 자동 오픈 (서버 준비 후) ---
 echo       HTS 화면을 브라우저에서 엽니다 ^(http://localhost:3000/hts^)...
@@ -170,11 +170,27 @@ goto MENU
 
 
 REM ─── Claude Code ───
+REM   Windows Terminal(wt.exe) 우선 — 터치/마우스 친화. 없으면 PowerShell 새 창.
+REM   claude 경로: PATH 우선, 못 찾으면 C:\Users\user\.local\bin\claude.exe 폴백.
 :CLAUDE
 echo.
 echo Claude Code 를 새 창에서 시작합니다...
-start "Claude Code (C:\ai-team)" cmd /k "chcp 65001 >nul && cd /d C:\ai-team && claude"
-echo 새 창이 열렸습니다. 본 런처는 메뉴 유지.
+
+set "CLAUDE_BIN=claude"
+where claude >nul 2>nul || set "CLAUDE_BIN=C:\Users\user\.local\bin\claude.exe"
+
+where wt >nul 2>nul
+if errorlevel 1 goto CLAUDE_PS
+
+REM Windows Terminal 새 창 (터치/마우스 제일 좋음)
+start "" wt.exe new-tab --title "Claude Code (C:\ai-team)" -d "C:\ai-team" cmd /k "chcp 65001 >nul && %CLAUDE_BIN%"
+echo 새 창^(Windows Terminal^)이 열렸습니다. 본 런처는 메뉴 유지.
+goto MENU
+
+:CLAUDE_PS
+REM Windows Terminal 없음 → PowerShell 새 창
+start "Claude Code (C:\ai-team)" powershell -NoExit -Command "Set-Location 'C:\ai-team'; chcp 65001 > $null; & '%CLAUDE_BIN%'"
+echo 새 창^(PowerShell^)이 열렸습니다. 본 런처는 메뉴 유지.
 goto MENU
 
 
@@ -200,16 +216,59 @@ exit
 
 
 REM ============================================================
-REM   서브루틴: traidair 자동 시작 (포트 3000 확인 → 스킵 / 백그라운드 시작)
+REM   서브루틴: traidair 서버 관리
+REM     :RESTART_TRAIDAIR — 항상 기존 종료 → 새로 실행 (start.bat 시작 시)
+REM     :ENSURE_TRAIDAIR  — 떠 있으면 그대로, 없으면 시작 (메뉴 재진입용 — 실행 중
+REM                         백테스트를 끊지 않으려고 죽이지 않는다)
+REM     :KILL_TRAIDAIR    — 포트 3000 점유/이전 TraidAIr 창 강제 종료
+REM     :START_TRAIDAIR   — 새 창(별도)에서 node server.js 실행 (로그 화면+파일 동시)
 REM ============================================================
+
+REM ─── 항상 재시작: 기존 server.js 강제 종료 후 새로 실행 ───
+:RESTART_TRAIDAIR
+call :KILL_TRAIDAIR
+call :START_TRAIDAIR
+goto :eof
+
+REM ─── 떠 있으면 유지, 없을 때만 시작 (메뉴에서 호출) ───
 :ENSURE_TRAIDAIR
 netstat -ano | findstr :3000 | findstr LISTENING >nul
 if %errorlevel% equ 0 (
-    echo       이미 포트 3000에서 실행 중 ^(traidair 추정^). 스킵.
+    echo       이미 포트 3000에서 실행 중 ^(traidair^). 유지.
     goto :eof
 )
+call :START_TRAIDAIR
+goto :eof
+
+REM ─── 포트 3000 점유 프로세스 + 이전 TraidAIr 창 강제 종료 ───
+:KILL_TRAIDAIR
+echo       기존 traidair/server.js 종료 ^(포트 3000 해제^)...
+REM 1) 이전 TraidAIr 서버 창 종료
+taskkill /FI "WINDOWTITLE eq TraidAIr*" /F >nul 2>nul
+REM 2) 포트 3000 LISTENING PID 종료 (살아있는 server.js → EADDRINUSE 방지)
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING') do (
+    taskkill /PID %%P /F >nul 2>nul
+)
+REM 3) 포트 해제 대기 (최대 5초)
+set "TR_FREE="
+for /l %%i in (1,1,5) do (
+    if not defined TR_FREE (
+        netstat -ano | findstr :3000 | findstr LISTENING >nul || set "TR_FREE=1"
+        if not defined TR_FREE timeout /t 1 /nobreak >nul
+    )
+)
+if defined TR_FREE (
+    echo       포트 3000 해제 완료.
+) else (
+    echo       [경고] 포트 3000 이 여전히 점유 중 — 시작이 실패할 수 있습니다.
+)
+set "TR_FREE="
+goto :eof
+
+REM ─── 새 창에서 node server.js 실행 (별도 창, 로그는 logs\server.log 에 기록) ───
+:START_TRAIDAIR
 if not exist "C:\traidair\server.js" (
-    echo       [경고] C:\traidair\server.js 없음 + 포트 3000 미점유.
+    echo       [경고] C:\traidair\server.js 없음.
     echo              traidair 가 없으면 KIS/DART 호출이 모두 실패합니다.
     echo              C:\traidair 에 레포를 두거나 config\kis_api.yaml 의
     echo              traidair_base_url 을 올바른 주소로 설정하세요.
@@ -217,9 +276,10 @@ if not exist "C:\traidair\server.js" (
 )
 where node >nul 2>nul
 if errorlevel 1 echo       [경고] node ^(Node.js^) 를 PATH 에서 못 찾음 — traidair 시작 실패 가능.
-echo       C:\traidair 에서 node server.js 백그라운드 시작...
-echo              ^(콘솔 로그는 C:\traidair\logs\server.log 에 영구 기록^)
-start "TraidAIr (KIS 프록시)" /MIN cmd /k "cd /d C:\traidair && if not exist logs mkdir logs && node server.js >> logs\server.log 2>&1"
+echo       C:\traidair 에서 node server.js 새 창으로 시작...
+echo              ^(로그는 C:\traidair\logs\server.log 에 기록^)
+if not exist "C:\traidair\logs" md "C:\traidair\logs" >nul 2>nul
+start "TraidAIr KIS Proxy" cmd /k "cd /d C:\traidair && node server.js > logs\server.log 2>&1"
 echo       서버 부팅 대기 ^(포트 3000, 최대 15초^)...
 set "TR_READY="
 for /l %%i in (1,1,15) do (
