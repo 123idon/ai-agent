@@ -1,0 +1,29 @@
+{
+  "date": "20251031",
+  "tradingDay": "2025-10-31",
+  "source": "yfinance",
+  "nasdaq": {
+    "ticker": "^IXIC",
+    "name": "나스닥종합",
+    "sessionDate": "2025-10-30",
+    "close": 23581.14,
+    "changePct": -1.57,
+    "note": "직전 미국장 마감(전일밤)"
+  },
+  "kospi": {
+    "ticker": "^KS11",
+    "name": "코스피",
+    "sessionDate": "2025-10-30",
+    "close": 4086.89,
+    "changePct": 0.14,
+    "note": "직전 한국 거래일 종가"
+  },
+  "kosdaq": {
+    "ticker": "^KQ11",
+    "name": "코스닥",
+    "sessionDate": "2025-10-30",
+    "close": 890.86,
+    "changePct": -1.19,
+    "note": "직전 한국 거래일 종가"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "date": "20260317",
+  "tradingDay": "2026-03-17",
+  "source": "yfinance",
+  "nasdaq": {
+    "ticker": "^IXIC",
+    "name": "나스닥종합",
+    "sessionDate": "2026-03-16",
+    "close": 22374.18,
+    "changePct": 1.22,
+    "note": "직전 미국장 마감(전일밤)"
+  },
+  "kospi": {
+    "ticker": "^KS11",
+    "name": "코스피",
+    "sessionDate": "2026-03-16",
+    "close": 5549.85,
+    "changePct": 1.14,
+    "note": "직전 한국 거래일 종가"
+  },
+  "kosdaq": {
+    "ticker": "^KQ11",
+    "name": "코스닥",
+    "sessionDate": "2026-03-16",
+    "close": 1138.29,
+    "changePct": -1.27,
+    "note": "직전 한국 거래일 종가"
+  }
+}
