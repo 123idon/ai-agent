@@ -144,6 +144,22 @@ def _market_context(date: str) -> dict | None:
         return None
 
 
+def _krx_daily(date: str) -> dict:
+    """data/krx_daily/{date}.json 의 {종목코드: {short, flow}} (없으면 빈 dict). 외부 호출 0.
+
+    ⭐ 호출부에서 ``date`` 는 항상 D-1(전일)이므로 당일 데이터 미사용(룩어헤드 없음).
+    파일/종목 누락(거래정지 등)은 빈 dict → 호출부에서 None 칼럼으로 처리(에러 없음).
+    """
+    f = ROOT / "data" / "krx_daily" / f"{date}.json"
+    if not f.is_file():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+        return d.get("symbols", {}) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _day_aggregate(path) -> dict:
     """하루치 parquet → {종목코드: {amt, vol, close}}.
 
@@ -201,6 +217,7 @@ def action_prep(date: str) -> dict:
 
     names = _name_map()
     sectors = _load_sectors()
+    krx = _krx_daily(prev)  # 전일(D-1) 공매도·수급 — 룩어헤드 없음
     rows: list[dict] = []
     for code, a in prev_agg.items():
         pclose = a["close"]
@@ -208,6 +225,12 @@ def action_prep(date: str) -> dict:
         chg = None
         if pp and pp.get("close"):
             chg = round((pclose - pp["close"]) / pp["close"] * 100.0, 2)
+        kx = krx.get(code) or {}
+        sh = kx.get("short") or {}
+        fl = kx.get("flow") or {}
+        short_ratio = sh.get("volume_ratio")          # 공매도 거래량 비중 %
+        foreign = fl.get("foreign")                    # 외국인 순매수 거래대금(원)
+        inst = fl.get("inst")                          # 기관 순매수 거래대금(원)
         rows.append({
             "code": code,
             "name": names.get(code, code),
@@ -217,6 +240,10 @@ def action_prep(date: str) -> dict:
             "vol": a["vol"],
             "close": pclose,
             "changePct": chg,
+            # ── 전일(D-1) 공매도·수급 (data/krx_daily/{prev}.json) ──
+            "shortRatio": short_ratio,
+            "foreignEok": round(foreign / 1e8) if foreign is not None else None,
+            "instEok": round(inst / 1e8) if inst is not None else None,
         })
     rows.sort(key=lambda r: r["amt"], reverse=True)
 
@@ -309,25 +336,106 @@ def action_daily(symbol: str) -> dict:
     return {"ok": True, "symbol": symbol, "count": len(candles), "candles": candles}
 
 
+def action_krx_trend(date: str, symbol: str, lookback: int = 10) -> dict:
+    """선택일 D 의 **직전 거래일들(최근 lookback일, D 미포함)** 공매도·수급 추이.
+
+    ⭐ 룩어헤드 차단: D 당일·미래 날짜는 절대 읽지 않는다. 거래일 순서는 로컬
+    ``data/candles`` 의 날짜 파일(=거래일)에서 D 이전(strictly <)만 취해 최근 lookback개를
+    시간 오름차순으로 돌려준다. 재생 위치(가상 시각)와 무관 — 모두 과거 일자라 안전하다.
+
+    각 일자: foreign/inst 순매수(원·억), shortRatio(공매도 비중 %). 데이터 없는 날(거래정지
+    등)은 None(빈칸). 더불어 연속일 요약(streaks: 외인/기관 며칠째 매수/매도), 공매도 추세.
+    """
+    date = "".join(ch for ch in str(date) if ch.isdigit())
+    symbol = str(symbol).strip()
+    stems = [p.stem for p in _date_files()]  # 거래일 오름차순
+    if date not in stems:
+        return {"ok": False, "error": f"해당 날짜 데이터 없음: {date}"}
+    idx = stems.index(date)
+    lookback = max(1, min(20, int(lookback)))
+    prev_stems = stems[:idx][-lookback:]      # D 이전(<D)만, 최근 lookback개, 시간 오름차순
+    if not prev_stems:
+        return {"ok": True, "date": date, "symbol": symbol, "lookback": lookback,
+                "days": [], "streaks": {}, "shortTrend": None,
+                "note": "직전 거래일 데이터 없음"}
+
+    days: list[dict] = []
+    for d in prev_stems:
+        kx = _krx_daily(d).get(symbol) or {}
+        sh = kx.get("short") or {}
+        fl = kx.get("flow") or {}
+        foreign = fl.get("foreign")
+        inst = fl.get("inst")
+        days.append({
+            "date": d,
+            "shortRatio": sh.get("volume_ratio"),
+            "foreign": foreign,
+            "inst": inst,
+            "foreignEok": round(foreign / 1e8) if foreign is not None else None,
+            "instEok": round(inst / 1e8) if inst is not None else None,
+        })
+
+    def streak(key: str) -> dict:
+        """가장 최근 일자부터 거꾸로, 같은 부호(순매수/순매도) 연속일 수."""
+        dirn = 0
+        n = 0
+        for rec in reversed(days):
+            v = rec[key]
+            if v is None:
+                if n == 0:
+                    continue           # 맨 끝(최근) 누락은 건너뜀
+                break
+            s = 1 if v > 0 else (-1 if v < 0 else 0)
+            if s == 0:
+                break
+            if dirn == 0:
+                dirn, n = s, 1
+            elif s == dirn:
+                n += 1
+            else:
+                break
+        return {"dir": dirn, "days": n}
+
+    sr_vals = [r["shortRatio"] for r in days if r["shortRatio"] is not None]
+    short_trend = None
+    if len(sr_vals) >= 2:
+        diff = round(sr_vals[-1] - sr_vals[0], 2)
+        short_trend = {
+            "first": sr_vals[0], "last": sr_vals[-1], "diff": diff,
+            "dir": "up" if diff > 0.3 else ("down" if diff < -0.3 else "flat"),
+        }
+
+    return {
+        "ok": True, "date": date, "symbol": symbol, "lookback": lookback,
+        "days": days,
+        "streaks": {"foreign": streak("foreign"), "inst": streak("inst")},
+        "shortTrend": short_trend,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--daily", action="store_true")
     ap.add_argument("--prep", action="store_true")
+    ap.add_argument("--krxtrend", action="store_true")
     ap.add_argument("--date")
     ap.add_argument("--symbol")
+    ap.add_argument("--lookback", type=int, default=10)
     args = ap.parse_args()
     try:
         if args.list:
             _emit(action_list())
         elif args.prep and args.date:
             _emit(action_prep(args.date))
+        elif args.krxtrend and args.date and args.symbol:
+            _emit(action_krx_trend(args.date, args.symbol, args.lookback))
         elif args.daily and args.symbol:
             _emit(action_daily(args.symbol))
         elif args.date and args.symbol:
             _emit(action_candles(args.date, args.symbol))
         else:
-            _emit({"ok": False, "error": "--list / --prep+--date / --daily+--symbol / --date+--symbol 필요"})
+            _emit({"ok": False, "error": "--list / --prep+--date / --krxtrend+--date+--symbol / --daily+--symbol / --date+--symbol 필요"})
     except Exception as e:  # noqa: BLE001 — 어떤 경우에도 JSON 한 줄
         _emit({"ok": False, "error": f"실행 오류: {e}"})
     return 0
