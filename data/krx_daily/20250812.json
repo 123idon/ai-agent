@@ -1,0 +1,818 @@
+{
+  "date": "20250812",
+  "tradingDay": "2025-08-12",
+  "source": "pykrx/KRX",
+  "fields": {
+    "short": [
+      "volume",
+      "total_volume",
+      "volume_ratio",
+      "balance_qty",
+      "listed_shares",
+      "balance_amount",
+      "market_cap",
+      "balance_ratio"
+    ],
+    "flow": [
+      "inst",
+      "retail",
+      "foreign",
+      "etc_corp"
+    ]
+  },
+  "note": "short=공매도(거래량/비중·잔고/금액/비중) · flow=투자자별 순매수 거래대금(원)",
+  "symbols": {
+    "000270": {
+      "short": {
+        "volume": 22257,
+        "total_volume": 779215,
+        "volume_ratio": 2.86,
+        "balance_qty": 609951,
+        "listed_shares": 397672632,
+        "balance_amount": 62093011800,
+        "market_cap": 40483073937600,
+        "balance_ratio": 0.15
+      },
+      "flow": {
+        "inst": 36039250,
+        "retail": -18009324850,
+        "foreign": 11004368850,
+        "etc_corp": 6968916750
+      }
+    },
+    "000660": {
+      "short": {
+        "volume": 288763,
+        "total_volume": 3966430,
+        "volume_ratio": 7.28,
+        "balance_qty": 908075,
+        "listed_shares": 728002365,
+        "balance_amount": 244272175000,
+        "market_cap": 195832636185000,
+        "balance_ratio": 0.12
+      },
+      "flow": {
+        "inst": 24740952250,
+        "retail": -141166085500,
+        "foreign": 117768807250,
+        "etc_corp": -1343674000
+      }
+    },
+    "003670": {
+      "short": {
+        "volume": 149646,
+        "total_volume": 894451,
+        "volume_ratio": 16.73,
+        "balance_qty": 1786562,
+        "listed_shares": 88946220,
+        "balance_amount": 282276796000,
+        "market_cap": 14053502760000,
+        "balance_ratio": 2.01
+      },
+      "flow": {
+        "inst": 8428415300,
+        "retail": 6348630750,
+        "foreign": -15294193000,
+        "etc_corp": 517146950
+      }
+    },
+    "005380": {
+      "short": {
+        "volume": 28582,
+        "total_volume": 522907,
+        "volume_ratio": 5.47,
+        "balance_qty": 553818,
+        "listed_shares": 204757766,
+        "balance_amount": 117963234000,
+        "market_cap": 43613404158000,
+        "balance_ratio": 0.27
+      },
+      "flow": {
+        "inst": 3879992500,
+        "retail": -24075442000,
+        "foreign": 21171743250,
+        "etc_corp": -976293750
+      }
+    },
+    "005490": {
+      "short": {
+        "volume": 12476,
+        "total_volume": 244723,
+        "volume_ratio": 5.1,
+        "balance_qty": 173301,
+        "listed_shares": 80932952,
+        "balance_amount": 53030106000,
+        "market_cap": 24765483312000,
+        "balance_ratio": 0.21
+      },
+      "flow": {
+        "inst": -919082500,
+        "retail": -12742929750,
+        "foreign": 14019263750,
+        "etc_corp": -357251500
+      }
+    },
+    "005930": {
+      "short": {
+        "volume": 278922,
+        "total_volume": 21464271,
+        "volume_ratio": 1.3,
+        "balance_qty": 1523033,
+        "listed_shares": 5919637922,
+        "balance_amount": 108287646300,
+        "market_cap": 420886256254200,
+        "balance_ratio": 0.03
+      },
+      "flow": {
+        "inst": -25423861000,
+        "retail": -79811860450,
+        "foreign": 37612584850,
+        "etc_corp": 67623136600
+      }
+    },
+    "006400": {
+      "short": {
+        "volume": 63820,
+        "total_volume": 685737,
+        "volume_ratio": 9.31,
+        "balance_qty": 1275526,
+        "listed_shares": 80585530,
+        "balance_amount": 281891246000,
+        "market_cap": 17809402130000,
+        "balance_ratio": 1.58
+      },
+      "flow": {
+        "inst": 702506000,
+        "retail": 16559342750,
+        "foreign": -16919187000,
+        "etc_corp": -342661750
+      }
+    },
+    "009150": {
+      "short": {
+        "volume": 21827,
+        "total_volume": 356073,
+        "volume_ratio": 6.13,
+        "balance_qty": 902735,
+        "listed_shares": 74693696,
+        "balance_amount": 142451583000,
+        "market_cap": 11786665228800,
+        "balance_ratio": 1.21
+      },
+      "flow": {
+        "inst": -2038825750,
+        "retail": -11449676800,
+        "foreign": 13476522450,
+        "etc_corp": 11980100
+      }
+    },
+    "010130": {
+      "short": {
+        "volume": 2083,
+        "total_volume": 15463,
+        "volume_ratio": 13.47,
+        "balance_qty": 23730,
+        "listed_shares": 20023273,
+        "balance_amount": 18390750000,
+        "market_cap": 15518036575000,
+        "balance_ratio": 0.12
+      },
+      "flow": {
+        "inst": -981173000,
+        "retail": 3379088500,
+        "foreign": -2409757500,
+        "etc_corp": 11842000
+      }
+    },
+    "010950": {
+      "short": {
+        "volume": 26605,
+        "total_volume": 186796,
+        "volume_ratio": 14.24,
+        "balance_qty": 1470165,
+        "listed_shares": 112582792,
+        "balance_amount": 89974098000,
+        "market_cap": 6890066870400,
+        "balance_ratio": 1.31
+      },
+      "flow": {
+        "inst": -565164400,
+        "retail": -4009031050,
+        "foreign": 4535106250,
+        "etc_corp": 39089200
+      }
+    },
+    "011200": {
+      "short": {
+        "volume": 57190,
+        "total_volume": 1038321,
+        "volume_ratio": 5.51,
+        "balance_qty": 11871196,
+        "listed_shares": 1025039496,
+        "balance_amount": 266508350200,
+        "market_cap": 23012136685200,
+        "balance_ratio": 1.16
+      },
+      "flow": {
+        "inst": -1302324300,
+        "retail": 1162156600,
+        "foreign": 114804600,
+        "etc_corp": 25363100
+      }
+    },
+    "012330": {
+      "short": {
+        "volume": 6864,
+        "total_volume": 211788,
+        "volume_ratio": 3.24,
+        "balance_qty": 145412,
+        "listed_shares": 91795094,
+        "balance_amount": 42969246000,
+        "market_cap": 27125450277000,
+        "balance_ratio": 0.16
+      },
+      "flow": {
+        "inst": 1303107000,
+        "retail": -7127160000,
+        "foreign": 8459804000,
+        "etc_corp": -2635751000
+      }
+    },
+    "015760": {
+      "short": {
+        "volume": 106293,
+        "total_volume": 8478158,
+        "volume_ratio": 1.25,
+        "balance_qty": 112675,
+        "listed_shares": 641964077,
+        "balance_amount": 4343621250,
+        "market_cap": 24747715168350,
+        "balance_ratio": 0.02
+      },
+      "flow": {
+        "inst": -8282401600,
+        "retail": 31218002500,
+        "foreign": -22349283425,
+        "etc_corp": -586317475
+      }
+    },
+    "018260": {
+      "short": {
+        "volume": 14052,
+        "total_volume": 176388,
+        "volume_ratio": 7.97,
+        "balance_qty": 201590,
+        "listed_shares": 77377800,
+        "balance_amount": 30641680000,
+        "market_cap": 11761425600000,
+        "balance_ratio": 0.26
+      },
+      "flow": {
+        "inst": -4648417500,
+        "retail": 2561061100,
+        "foreign": 2095948600,
+        "etc_corp": -8592200
+      }
+    },
+    "022100": {
+      "short": {
+        "volume": 12096,
+        "total_volume": 394836,
+        "volume_ratio": 3.06,
+        "balance_qty": 2171505,
+        "listed_shares": 152034729,
+        "balance_amount": 54179049750,
+        "market_cap": 3793266488550,
+        "balance_ratio": 1.43
+      },
+      "flow": {
+        "inst": 284565175,
+        "retail": -1109736600,
+        "foreign": 840913650,
+        "etc_corp": -15742225
+      }
+    },
+    "028260": {
+      "short": {
+        "volume": 9325,
+        "total_volume": 235649,
+        "volume_ratio": 3.96,
+        "balance_qty": 144987,
+        "listed_shares": 169976544,
+        "balance_amount": 23241416100,
+        "market_cap": 27247240003200,
+        "balance_ratio": 0.09
+      },
+      "flow": {
+        "inst": -2167257600,
+        "retail": -162516700,
+        "foreign": 2285341250,
+        "etc_corp": 44433050
+      }
+    },
+    "028300": {
+      "short": {
+        "volume": 54791,
+        "total_volume": 918519,
+        "volume_ratio": 5.97,
+        "balance_qty": 4956504,
+        "listed_shares": 131438096,
+        "balance_amount": 202473188400,
+        "market_cap": 5369246221600,
+        "balance_ratio": 3.77
+      },
+      "flow": {
+        "inst": -982632050,
+        "retail": 1509217475,
+        "foreign": -566361675,
+        "etc_corp": 39776250
+      }
+    },
+    "032830": {
+      "short": {
+        "volume": 27467,
+        "total_volume": 265454,
+        "volume_ratio": 10.35,
+        "balance_qty": 211430,
+        "listed_shares": 200000000,
+        "balance_amount": 26196177000,
+        "market_cap": 24780000000000,
+        "balance_ratio": 0.11
+      },
+      "flow": {
+        "inst": 266809800,
+        "retail": -1638820100,
+        "foreign": 1328649300,
+        "etc_corp": 43361000
+      }
+    },
+    "033780": {
+      "short": {
+        "volume": 25025,
+        "total_volume": 463313,
+        "volume_ratio": 5.4,
+        "balance_qty": 38269,
+        "listed_shares": 122062497,
+        "balance_amount": 5376794500,
+        "market_cap": 17149780828500,
+        "balance_ratio": 0.03
+      },
+      "flow": {
+        "inst": 3477958000,
+        "retail": -1385120300,
+        "foreign": -15965633500,
+        "etc_corp": 13872795800
+      }
+    },
+    "034730": {
+      "short": {
+        "volume": 25702,
+        "total_volume": 262677,
+        "volume_ratio": 9.78,
+        "balance_qty": 233125,
+        "listed_shares": 72502703,
+        "balance_amount": 43641000000,
+        "market_cap": 13572506001600,
+        "balance_ratio": 0.32
+      },
+      "flow": {
+        "inst": -625868800,
+        "retail": 229662400,
+        "foreign": 1100543800,
+        "etc_corp": -704337400
+      }
+    },
+    "035420": {
+      "short": {
+        "volume": 47538,
+        "total_volume": 1164136,
+        "volume_ratio": 4.08,
+        "balance_qty": 510062,
+        "listed_shares": 158437008,
+        "balance_amount": 113743826000,
+        "market_cap": 35331452784000,
+        "balance_ratio": 0.32
+      },
+      "flow": {
+        "inst": 976874250,
+        "retail": 19262872250,
+        "foreign": -12693326250,
+        "etc_corp": -7546420250
+      }
+    },
+    "035720": {
+      "short": {
+        "volume": 93312,
+        "total_volume": 4324351,
+        "volume_ratio": 2.16,
+        "balance_qty": 272212,
+        "listed_shares": 442124799,
+        "balance_amount": 17339904400,
+        "market_cap": 28163349696300,
+        "balance_ratio": 0.06
+      },
+      "flow": {
+        "inst": -2198947650,
+        "retail": -27631721150,
+        "foreign": 30987372050,
+        "etc_corp": -1156703250
+      }
+    },
+    "035900": {
+      "short": {
+        "volume": 13993,
+        "total_volume": 857155,
+        "volume_ratio": 1.63,
+        "balance_qty": 84877,
+        "listed_shares": 35532492,
+        "balance_amount": 7044791000,
+        "market_cap": 2949196836000,
+        "balance_ratio": 0.24
+      },
+      "flow": {
+        "inst": 5336377300,
+        "retail": -15022678150,
+        "foreign": 9912505200,
+        "etc_corp": -226204350
+      }
+    },
+    "041510": {
+      "short": {
+        "volume": 7305,
+        "total_volume": 188075,
+        "volume_ratio": 3.88,
+        "balance_qty": 28018,
+        "listed_shares": 22894690,
+        "balance_amount": 4082222600,
+        "market_cap": 3335756333000,
+        "balance_ratio": 0.12
+      },
+      "flow": {
+        "inst": 1214423150,
+        "retail": -1844494800,
+        "foreign": 4338232550,
+        "etc_corp": -3708160900
+      }
+    },
+    "051910": {
+      "short": {
+        "volume": 7126,
+        "total_volume": 222891,
+        "volume_ratio": 3.2,
+        "balance_qty": 415880,
+        "listed_shares": 70592343,
+        "balance_amount": 114574940000,
+        "market_cap": 19448190496500,
+        "balance_ratio": 0.59
+      },
+      "flow": {
+        "inst": -3637953000,
+        "retail": -8500860750,
+        "foreign": 12049066750,
+        "etc_corp": 89747000
+      }
+    },
+    "055550": {
+      "short": {
+        "volume": 32138,
+        "total_volume": 1074950,
+        "volume_ratio": 2.99,
+        "balance_qty": 1231174,
+        "listed_shares": 485494934,
+        "balance_amount": 86182180000,
+        "market_cap": 33984645380000,
+        "balance_ratio": 0.25
+      },
+      "flow": {
+        "inst": 10643974050,
+        "retail": -13760263850,
+        "foreign": 3097142250,
+        "etc_corp": 19147550
+      }
+    },
+    "058470": {
+      "short": {
+        "volume": 35112,
+        "total_volume": 385124,
+        "volume_ratio": 9.12,
+        "balance_qty": 81610,
+        "listed_shares": 76211850,
+        "balance_amount": 3762221000,
+        "market_cap": 3513366285000,
+        "balance_ratio": 0.11
+      },
+      "flow": {
+        "inst": -2105428425,
+        "retail": -104209050,
+        "foreign": 2235346250,
+        "etc_corp": -25708775
+      }
+    },
+    "066570": {
+      "short": {
+        "volume": 35139,
+        "total_volume": 444228,
+        "volume_ratio": 7.91,
+        "balance_qty": 756156,
+        "listed_shares": 163647814,
+        "balance_amount": 57392240400,
+        "market_cap": 12420869082600,
+        "balance_ratio": 0.46
+      },
+      "flow": {
+        "inst": -2156525100,
+        "retail": 5267640650,
+        "foreign": -2886384950,
+        "etc_corp": -224730600
+      }
+    },
+    "066970": {
+      "short": {
+        "volume": 18526,
+        "total_volume": 897796,
+        "volume_ratio": 2.06,
+        "balance_qty": 626986,
+        "listed_shares": 36316174,
+        "balance_amount": 52854919800,
+        "market_cap": 3061453468200,
+        "balance_ratio": 1.73
+      },
+      "flow": {
+        "inst": 7029903000,
+        "retail": -5050858700,
+        "foreign": -1883127700,
+        "etc_corp": -95916600
+      }
+    },
+    "068270": {
+      "short": {
+        "volume": 176787,
+        "total_volume": 469625,
+        "volume_ratio": 37.64,
+        "balance_qty": 4100397,
+        "listed_shares": 230920342,
+        "balance_amount": 706908442800,
+        "market_cap": 39810666960800,
+        "balance_ratio": 1.78
+      },
+      "flow": {
+        "inst": 1260445000,
+        "retail": -8756275850,
+        "foreign": -4498783350,
+        "etc_corp": 11994614200
+      }
+    },
+    "068760": {
+      "short": {
+        "volume": 4617,
+        "total_volume": 73972,
+        "volume_ratio": 6.24,
+        "balance_qty": 715117,
+        "listed_shares": 43678692,
+        "balance_amount": 37400619100,
+        "market_cap": 2284395591600,
+        "balance_ratio": 1.64
+      },
+      "flow": {
+        "inst": -154789800,
+        "retail": 311749750,
+        "foreign": -156275450,
+        "etc_corp": -684500
+      }
+    },
+    "086520": {
+      "short": {
+        "volume": 324837,
+        "total_volume": 5270066,
+        "volume_ratio": 6.16,
+        "balance_qty": 6444672,
+        "listed_shares": 135776152,
+        "balance_amount": 367990771200,
+        "market_cap": 7752818279200,
+        "balance_ratio": 4.75
+      },
+      "flow": {
+        "inst": 156110350,
+        "retail": -12936578050,
+        "foreign": 11187603900,
+        "etc_corp": 1592863800
+      }
+    },
+    "086790": {
+      "short": {
+        "volume": 19760,
+        "total_volume": 843282,
+        "volume_ratio": 2.34,
+        "balance_qty": 929019,
+        "listed_shares": 284723889,
+        "balance_amount": 79338222600,
+        "market_cap": 24315420120600,
+        "balance_ratio": 0.33
+      },
+      "flow": {
+        "inst": 10173894300,
+        "retail": -14622750700,
+        "foreign": 4560286700,
+        "etc_corp": -111430300
+      }
+    },
+    "096770": {
+      "short": {
+        "volume": 70720,
+        "total_volume": 256856,
+        "volume_ratio": 27.53,
+        "balance_qty": 2438675,
+        "listed_shares": 151034776,
+        "balance_amount": 258499550000,
+        "market_cap": 16009686256000,
+        "balance_ratio": 1.61
+      },
+      "flow": {
+        "inst": 664978000,
+        "retail": 2303250700,
+        "foreign": -3062100200,
+        "etc_corp": 93871500
+      }
+    },
+    "105560": {
+      "short": {
+        "volume": 61561,
+        "total_volume": 763091,
+        "volume_ratio": 8.07,
+        "balance_qty": 984648,
+        "listed_shares": 381462103,
+        "balance_amount": 112348336800,
+        "market_cap": 43524825952300,
+        "balance_ratio": 0.26
+      },
+      "flow": {
+        "inst": 1235383600,
+        "retail": -15562703700,
+        "foreign": 14545998100,
+        "etc_corp": -218678000
+      }
+    },
+    "145020": {
+      "short": {
+        "volume": 2911,
+        "total_volume": 104548,
+        "volume_ratio": 2.78,
+        "balance_qty": 39195,
+        "listed_shares": 12304033,
+        "balance_amount": 12973545000,
+        "market_cap": 4072634923000,
+        "balance_ratio": 0.32
+      },
+      "flow": {
+        "inst": -1455484000,
+        "retail": 3743159250,
+        "foreign": -2253198250,
+        "etc_corp": -34477000
+      }
+    },
+    "196170": {
+      "short": {
+        "volume": 14969,
+        "total_volume": 401112,
+        "volume_ratio": 3.73,
+        "balance_qty": 84005,
+        "listed_shares": 53464968,
+        "balance_amount": 36500172500,
+        "market_cap": 23230528596000,
+        "balance_ratio": 0.16
+      },
+      "flow": {
+        "inst": -10505884750,
+        "retail": 22567986500,
+        "foreign": -13358102000,
+        "etc_corp": 1296000250
+      }
+    },
+    "207940": {
+      "short": {
+        "volume": 1147,
+        "total_volume": 50743,
+        "volume_ratio": 2.26,
+        "balance_qty": 60558,
+        "listed_shares": 71174000,
+        "balance_amount": 61829718000,
+        "market_cap": 72668654000000,
+        "balance_ratio": 0.09
+      },
+      "flow": {
+        "inst": 4632498000,
+        "retail": 10788154500,
+        "foreign": -16148917500,
+        "etc_corp": 728265000
+      }
+    },
+    "240810": {
+      "short": {
+        "volume": 43536,
+        "total_volume": 1375864,
+        "volume_ratio": 3.16,
+        "balance_qty": 35202,
+        "listed_shares": 49083901,
+        "balance_amount": 1341196200,
+        "market_cap": 1870096628100,
+        "balance_ratio": 0.07
+      },
+      "flow": {
+        "inst": -1422796725,
+        "retail": -6069452250,
+        "foreign": 7485050350,
+        "etc_corp": 7198625
+      }
+    },
+    "247540": {
+      "short": {
+        "volume": 215798,
+        "total_volume": 2331103,
+        "volume_ratio": 9.26,
+        "balance_qty": 3740421,
+        "listed_shares": 97801344,
+        "balance_amount": 504208750800,
+        "market_cap": 13183621171200,
+        "balance_ratio": 3.82
+      },
+      "flow": {
+        "inst": 17962360950,
+        "retail": -2801798050,
+        "foreign": -15847229400,
+        "etc_corp": 686666500
+      }
+    },
+    "293490": {
+      "short": {
+        "volume": 30210,
+        "total_volume": 434365,
+        "volume_ratio": 6.95,
+        "balance_qty": 2145846,
+        "listed_shares": 82866437,
+        "balance_amount": 35621043600,
+        "market_cap": 1375582854200,
+        "balance_ratio": 2.59
+      },
+      "flow": {
+        "inst": -147339775,
+        "retail": -728727375,
+        "foreign": 916640060,
+        "etc_corp": -40572910
+      }
+    },
+    "316140": {
+      "short": {
+        "volume": 141988,
+        "total_volume": 1304962,
+        "volume_ratio": 10.88,
+        "balance_qty": 2555382,
+        "listed_shares": 742591501,
+        "balance_amount": 64140088200,
+        "market_cap": 18639046675100,
+        "balance_ratio": 0.34
+      },
+      "flow": {
+        "inst": 652089750,
+        "retail": -4859671700,
+        "foreign": 6304141125,
+        "etc_corp": -2096559175
+      }
+    },
+    "357780": {
+      "short": {
+        "volume": 5899,
+        "total_volume": 78034,
+        "volume_ratio": 7.56,
+        "balance_qty": 51587,
+        "listed_shares": 7778566,
+        "balance_amount": 12097151500,
+        "market_cap": 1824073727000,
+        "balance_ratio": 0.66
+      },
+      "flow": {
+        "inst": 5305944000,
+        "retail": -73995000,
+        "foreign": -5380098500,
+        "etc_corp": 148149500
+      }
+    },
+    "373220": {
+      "short": {
+        "volume": 38783,
+        "total_volume": 258482,
+        "volume_ratio": 15.0,
+        "balance_qty": 2590979,
+        "listed_shares": 234000000,
+        "balance_amount": 1006595341500,
+        "market_cap": 90909000000000,
+        "balance_ratio": 1.11
+      },
+      "flow": {
+        "inst": 17303754500,
+        "retail": -22922981250,
+        "foreign": 6258186750,
+        "etc_corp": -638960000
+      }
+    }
+  }
+}
