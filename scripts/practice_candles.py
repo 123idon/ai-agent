@@ -268,6 +268,61 @@ def action_prep(date: str) -> dict:
     }
 
 
+def action_flow(date: str) -> dict:
+    """장중 실시간 섹터 자금 흐름용 — 그날 **전 종목(44)**의 분당 거래대금 시계열.
+
+    ⭐ 룩어헤드는 **클라이언트**가 담당한다. 여기서는 하루치 1분봉을 그대로(시간 오름차순)
+    돌려주고, 브라우저(재생 엔진)가 '현재 재생 시각 이전(≤) 분봉만' 누적한다(prcAggregate 와
+    동일 원칙). 서버는 미래 판단을 하지 않으므로 그날 전체를 실어도 안전하다 — 잘라내는 책임은
+    현재 시점(n1)을 아는 클라이언트에 있다.
+
+    반환:
+      series : {종목코드: [[t("HH:MM"), amtManwon(분당 거래대금, 만원)], ...]}  # t 오름차순
+      sectors: {종목코드: 섹터명}   (config/sectors.json, 매핑 없으면 미포함)
+      names  : {종목코드: 종목명}
+    ``amt``(만원)=Σ(분봉종가 × 분봉거래량)//10000. **로컬 parquet + sectors.json 만**(외부 호출 0).
+    """
+    import pandas as pd
+
+    date = "".join(ch for ch in str(date) if ch.isdigit())
+    f = CANDLES / f"{date}.parquet"
+    if not f.is_file():
+        return {"ok": False, "error": f"해당 날짜 데이터 없음: {date}"}
+    try:
+        df = pd.read_parquet(f, columns=["symbol", "t", "c", "v"])
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"parquet 읽기 실패: {e}"}
+    df["symbol"] = df["symbol"].astype(str)
+    df = df[df["symbol"].map(lambda s: s.isdigit() and len(s) == 6)]
+    if df.empty:
+        return {"ok": False, "error": f"{date} 에 6자리 종목 분봉 없음"}
+    df = df.assign(amt=df["c"].astype("int64") * df["v"].astype("int64"))
+
+    names_all = _name_map()
+    sectors_all = _load_sectors()
+    series: dict[str, list] = {}
+    names: dict[str, str] = {}
+    sectors: dict[str, str] = {}
+    for sym, sub in df.groupby("symbol"):
+        sub = sub.sort_values("t")
+        # 분당 거래대금(만원). 0 분봉(거래 없음)도 시계열 정합을 위해 그대로 둔다.
+        series[str(sym)] = [
+            [str(t), int(a) // 10000] for t, a in zip(sub["t"], sub["amt"])
+        ]
+        names[str(sym)] = names_all.get(str(sym), str(sym))
+        s = sectors_all.get(str(sym))
+        if s:
+            sectors[str(sym)] = s
+    return {
+        "ok": True,
+        "date": date,
+        "series": series,
+        "sectors": sectors,   # 매핑 있는 종목만(없으면 클라이언트가 '기타')
+        "names": names,
+        "symbolCount": len(series),
+    }
+
+
 def action_candles(date: str, symbol: str) -> dict:
     import pandas as pd
 
@@ -418,6 +473,7 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--daily", action="store_true")
     ap.add_argument("--prep", action="store_true")
+    ap.add_argument("--flow", action="store_true")
     ap.add_argument("--krxtrend", action="store_true")
     ap.add_argument("--date")
     ap.add_argument("--symbol")
@@ -428,6 +484,8 @@ def main() -> int:
             _emit(action_list())
         elif args.prep and args.date:
             _emit(action_prep(args.date))
+        elif args.flow and args.date:
+            _emit(action_flow(args.date))
         elif args.krxtrend and args.date and args.symbol:
             _emit(action_krx_trend(args.date, args.symbol, args.lookback))
         elif args.daily and args.symbol:
@@ -435,7 +493,7 @@ def main() -> int:
         elif args.date and args.symbol:
             _emit(action_candles(args.date, args.symbol))
         else:
-            _emit({"ok": False, "error": "--list / --prep+--date / --krxtrend+--date+--symbol / --daily+--symbol / --date+--symbol 필요"})
+            _emit({"ok": False, "error": "--list / --prep+--date / --flow+--date / --krxtrend+--date+--symbol / --daily+--symbol / --date+--symbol 필요"})
     except Exception as e:  # noqa: BLE001 — 어떤 경우에도 JSON 한 줄
         _emit({"ok": False, "error": f"실행 오류: {e}"})
     return 0
