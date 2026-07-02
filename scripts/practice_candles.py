@@ -277,10 +277,13 @@ def action_flow(date: str) -> dict:
     현재 시점(n1)을 아는 클라이언트에 있다.
 
     반환:
-      series : {종목코드: [[t("HH:MM"), amtManwon(분당 거래대금, 만원)], ...]}  # t 오름차순
+      series : {종목코드: [[t("HH:MM"), amtManwon, vol, close], ...]}  # t 오름차순
+               amtManwon=분당 거래대금(만원)=종가×거래량//10000, vol=분당 거래량, close=분봉 종가
       sectors: {종목코드: 섹터명}   (config/sectors.json, 매핑 없으면 미포함)
       names  : {종목코드: 종목명}
-    ``amt``(만원)=Σ(분봉종가 × 분봉거래량)//10000. **로컬 parquet + sectors.json 만**(외부 호출 0).
+      prevClose: {종목코드: 전일(D-1) 종가}   # 장중 등락률 기준(과거=룩어헤드 아님), 없으면 미포함
+    **로컬 parquet + sectors.json 만**(외부 호출 0). 장중 실시간 섹터 자금(amt) + 종목 순위
+    (amt/vol/현재가/등락률)가 모두 이 한 응답으로 계산된다 — 룩어헤드 컷오프는 클라이언트(n1) 담당.
     """
     import pandas as pd
 
@@ -305,19 +308,33 @@ def action_flow(date: str) -> dict:
     sectors: dict[str, str] = {}
     for sym, sub in df.groupby("symbol"):
         sub = sub.sort_values("t")
-        # 분당 거래대금(만원). 0 분봉(거래 없음)도 시계열 정합을 위해 그대로 둔다.
+        # 분당 [t, 거래대금(만원), 거래량, 종가]. 0 분봉(거래 없음)도 시계열 정합을 위해 그대로 둔다.
         series[str(sym)] = [
-            [str(t), int(a) // 10000] for t, a in zip(sub["t"], sub["amt"])
+            [str(t), int(a) // 10000, int(v), int(c)]
+            for t, a, v, c in zip(sub["t"], sub["amt"], sub["v"], sub["c"])
         ]
         names[str(sym)] = names_all.get(str(sym), str(sym))
         s = sectors_all.get(str(sym))
         if s:
             sectors[str(sym)] = s
+
+    # 전일(D-1) 종가 — 장중 등락률 기준. 직전 거래일 파일의 마지막 봉 종가(과거=룩어헤드 아님).
+    prev_close: dict[str, int] = {}
+    files = _date_files()  # 날짜 오름차순
+    stems = [p.stem for p in files]
+    if date in stems and stems.index(date) >= 1:
+        try:
+            prev_agg = _day_aggregate(files[stems.index(date) - 1])
+            prev_close = {str(k): int(vv["close"]) for k, vv in prev_agg.items()}
+        except Exception:  # noqa: BLE001 — 전일 없으면 등락률만 미표시(치명 아님)
+            prev_close = {}
+
     return {
         "ok": True,
         "date": date,
         "series": series,
         "sectors": sectors,   # 매핑 있는 종목만(없으면 클라이언트가 '기타')
+        "prevClose": prev_close,   # 등락률 기준(없으면 클라이언트가 '—')
         "names": names,
         "symbolCount": len(series),
     }
