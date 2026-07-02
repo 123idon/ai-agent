@@ -10,6 +10,22 @@
     "changePct": -0.93,
     "note": "직전 미국장 마감(전일밤)"
   },
+  "sp500": {
+    "ticker": "^GSPC",
+    "name": "S&P500",
+    "sessionDate": "2026-03-13",
+    "close": 6632.19,
+    "changePct": -0.61,
+    "note": "직전 미국장 마감(전일밤)"
+  },
+  "vix": {
+    "ticker": "^VIX",
+    "name": "VIX 공포지수",
+    "sessionDate": "2026-03-13",
+    "close": 27.19,
+    "changePct": -0.37,
+    "note": "직전 미국장 마감(전일밤)"
+  },
   "kospi": {
     "ticker": "^KS11",
     "name": "코스피",
@@ -25,5 +41,13 @@
     "close": 1152.96,
     "changePct": 0.4,
     "note": "직전 한국 거래일 종가"
+  },
+  "usdkrw": {
+    "ticker": "KRW=X",
+    "name": "원/달러 환율",
+    "sessionDate": "2026-03-13",
+    "close": 1470.58,
+    "changePct": -0.32,
+    "note": "직전 거래 세션(전일 환율)"
   }
 }

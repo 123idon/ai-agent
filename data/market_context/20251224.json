@@ -10,6 +10,22 @@
     "changePct": 0.57,
     "note": "직전 미국장 마감(전일밤)"
   },
+  "sp500": {
+    "ticker": "^GSPC",
+    "name": "S&P500",
+    "sessionDate": "2025-12-23",
+    "close": 6909.79,
+    "changePct": 0.46,
+    "note": "직전 미국장 마감(전일밤)"
+  },
+  "vix": {
+    "ticker": "^VIX",
+    "name": "VIX 공포지수",
+    "sessionDate": "2025-12-23",
+    "close": 14.0,
+    "changePct": -0.57,
+    "note": "직전 미국장 마감(전일밤)"
+  },
   "kospi": {
     "ticker": "^KS11",
     "name": "코스피",
@@ -25,5 +41,13 @@
     "close": 919.56,
     "changePct": -1.03,
     "note": "직전 한국 거래일 종가"
+  },
+  "usdkrw": {
+    "ticker": "KRW=X",
+    "name": "원/달러 환율",
+    "sessionDate": "2025-12-23",
+    "close": 1476.84,
+    "changePct": 0.21,
+    "note": "직전 거래 세션(전일 환율)"
   }
 }
